@@ -1,0 +1,1932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finding Aid Review Renderer v0.5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --chrome-bg:#eceded;
+    --chrome-line:#c9cccd;
+    --chrome-ink:#2b3033;
+    --chrome-dim:#5f666a;
+    --accent:#2f5d62;
+    --sev-error:#8f2f2f;
+    --sev-warn:#7a6420;
+    --sev-info:#4a5257;
+    --sev-gap:#8a5a2b;
+    --paper:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--chrome-bg);color:var(--chrome-ink);
+    font:13.5px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:flex;flex-direction:column;
+  }
+
+  /* ---------- chrome: one row ---------- */
+  header{
+    flex:0 0 auto;background:#f6f7f7;border-bottom:1px solid var(--chrome-line);
+    padding:8px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+  }
+  .fname{color:var(--chrome-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30ch}
+  .fname b{color:var(--chrome-ink);font-weight:600}
+  button{
+    font:inherit;padding:5px 12px;border:1px solid var(--chrome-line);background:#fff;
+    border-radius:3px;cursor:pointer;color:inherit;
+  }
+  button:hover:not(:disabled){border-color:#9aa0a2}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover:not(:disabled){background:#26494d}
+  button:focus-visible,input:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* the counts are the filter */
+  .chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .chip{
+    font:inherit;font-size:12.5px;padding:3px 10px;border:1px solid var(--chrome-line);
+    background:#fff;border-radius:11px;cursor:pointer;color:var(--chrome-dim);white-space:nowrap;
+  }
+  .chip .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .chip.error .dot{background:var(--sev-error)} .chip.warn .dot{background:var(--sev-warn)}
+  .chip.info .dot{background:var(--sev-info)}   .chip.gap .dot{background:var(--sev-gap)}
+  .chip[aria-pressed=true]{background:#fff;color:var(--chrome-ink);border-color:#9aa0a2;font-weight:600}
+  .chip[aria-pressed=false]{opacity:.5;text-decoration:line-through}
+  .chip:disabled{opacity:.3;cursor:default;text-decoration:none}
+
+  /* ---------- settings, tucked away ---------- */
+  #settings{
+    display:none;width:100%;border-top:1px solid var(--chrome-line);margin-top:8px;padding-top:9px;
+    gap:22px;flex-wrap:wrap;align-items:flex-start;
+  }
+  #settings.open{display:flex}
+  .sgroup{display:flex;flex-direction:column;gap:5px}
+  .sgroup .ttl{font-size:11px;color:var(--chrome-dim);font-weight:600;letter-spacing:.02em}
+  label.opt{display:flex;gap:5px;align-items:center;cursor:pointer;white-space:nowrap}
+  input[type=text]{
+    font:inherit;padding:4px 7px;border:1px solid var(--chrome-line);border-radius:3px;
+    background:#fff;color:inherit;min-width:320px;
+  }
+  .urlrow{display:flex;gap:6px;align-items:center}
+  .linkish{background:none;border:none;color:var(--accent);cursor:pointer;padding:2px 4px;font-size:12px;text-decoration:underline}
+
+  main{flex:1 1 auto;overflow:auto;padding:22px 0 120px}
+
+  #drop{
+    max-width:560px;margin:60px auto;padding:44px 30px;text-align:center;
+    border:1px dashed #a8adaf;border-radius:5px;background:#f6f7f7;color:var(--chrome-dim);
+  }
+  #drop.over{border-color:var(--accent);background:#eaf0f0;color:var(--chrome-ink)}
+  #drop h2{margin:0 0 6px;font-size:16px;color:var(--chrome-ink);font-weight:600}
+  #drop p{margin:0 0 18px}
+  #drop pre{text-align:left;background:#fff;border:1px solid var(--chrome-line);padding:9px;
+    font-size:11.5px;overflow:auto;white-space:pre-wrap;color:#333;margin:0 0 16px}
+  #lastfile{font-size:12px;color:var(--chrome-dim);margin:14px 0 0}
+
+  /* ---------- stage: document + margin ---------- */
+  #stage{display:flex;gap:0.28in;justify-content:center;align-items:flex-start;padding:0 14px}
+  #docwrap{flex:0 0 auto;width:8.5in;background:var(--paper);padding:0.85in 1in;
+    box-shadow:0 1px 3px rgba(0,0,0,.14)}
+  #margin{flex:0 0 auto;width:2.9in;position:relative;min-height:1px}
+  .mnote{
+    position:absolute;left:0;width:100%;font-size:12px;line-height:1.4;
+    border-left:3px solid var(--chrome-line);padding:4px 0 4px 9px;background:transparent;
+  }
+  .mnote.error{border-left-color:var(--sev-error)}
+  .mnote.warn{border-left-color:var(--sev-warn)}
+  .mnote.info{border-left-color:var(--sev-info)}
+  .mnote.gap{border-left-color:var(--sev-gap)}
+  .mnote .txt{color:var(--chrome-ink)}
+  .mnote .meta{color:var(--chrome-dim);font-size:11px;margin-top:2px}
+  .mnote .meta .aud{font-style:italic}
+  .mnote .finding + .finding{margin-top:6px;padding-top:6px;border-top:1px dotted var(--chrome-line)}
+  .mnote .finding[hidden]{display:none}
+  .mnote[hidden]{display:none}
+  /* placed further from its anchor than it should be — say so rather than
+     letting it quietly point at the wrong thing */
+  .mnote.drifted{border-left-style:dotted}
+  .mnote.drifted::after{
+    content:"↕ shifted to fit";display:block;font-size:10.5px;color:var(--chrome-dim);margin-top:3px;
+  }
+
+  /* findings with nowhere in the document to point */
+  #mglobal{position:static;margin:0 0 6px}
+  #mglobal-head{
+    font:inherit;font-size:12px;background:none;border:none;padding:2px 0;cursor:pointer;
+    color:var(--chrome-dim);text-align:left;text-decoration:underline;text-underline-offset:2px;
+  }
+  #mglobal-head:hover{color:var(--chrome-ink)}
+  #mglobal-body{display:none;margin-top:5px}
+  #mglobal.open #mglobal-body{display:block}
+  #mglobal .mnote.static{position:static;margin:0 0 7px}
+
+  /* narrow windows: the margin has nowhere to go, so it stacks under */
+  #stage.narrow{flex-direction:column;align-items:center}
+  #stage.narrow #docwrap{width:100%;max-width:8.5in}
+  #stage.narrow #margin{width:100%;max-width:8.5in;position:static;margin-top:18px;
+    border-top:1px solid var(--chrome-line);padding-top:12px}
+  #stage.narrow .mnote{position:static;margin:0 0 8px}
+  #stage.narrow .mnote.drifted{border-left-style:solid}
+  #stage.narrow .mnote.drifted::after{content:none}
+
+  /* ---------- the document ---------- */
+  #doc{font-family:"EB Garamond",Garamond,Georgia,serif;font-size:12pt;line-height:1.44;color:#000}
+  #doc .repoline{font-size:11pt;color:#333;margin:0 0 2pt}
+  #doc h1{font-size:19pt;font-weight:600;line-height:1.2;margin:0 0 3pt}
+  #doc .permalink{font-size:10.5pt;margin:0 0 20pt;word-break:break-all}
+  #doc h2{font-size:14pt;font-weight:600;margin:24pt 0 7pt;border-bottom:1px solid #b9b9b9;padding-bottom:3pt}
+  #doc h3.band{font-size:10.5pt;font-weight:600;letter-spacing:.09em;margin:18pt 0 6pt;color:#3a3a3a}
+  #doc p{margin:0 0 8pt}
+  #doc ul,#doc ol{margin:0 0 8pt;padding-left:22pt}
+  #doc li{margin:0 0 2pt}
+  /* Links read as ordinary text. The affordance is the cursor and the hover;
+     colour and underlines would carry into the pasted document as clutter. */
+  #doc a{color:inherit;text-decoration:none}
+  #doc a:hover{text-decoration:underline;text-decoration-thickness:1px}
+  /* Copy happens from the live node so the clipboard inherits the white page
+     behind it. A clone parked off-screen picks up the grey body instead. */
+  #doc.copying tr.empty-row{display:none}
+
+  #doc table.fields{border-collapse:collapse;width:100%;margin:0 0 8pt}
+  #doc table.fields td{vertical-align:top;padding:2.5pt 0;border:none}
+  #doc table.fields td.lbl{width:1.75in;padding-right:11pt;font-weight:600}
+  #doc table.fields p{margin:0 0 5pt}
+  #doc table.fields p:last-child{margin:0}
+  #doc table.fields ul{margin:0;padding-left:16pt}
+
+  /* Contents: headings and paragraphs, as in v0.1. Google Docs maps these onto
+     its own paragraph styles and keeps their spacing; margins on wrapper divs
+     it drops. The spacing lives on the elements for that reason. */
+  #doc h3.series{font-size:12.5pt;font-weight:600;margin:20pt 0 5pt}
+  #doc h4.subseries{font-size:12pt;font-weight:600;font-style:italic;margin:14pt 0 4pt}
+  #doc p.file{margin:9pt 0 3pt;font-weight:600}
+  #doc .cdate{font-weight:400}
+  #doc .refid{font-family:"Courier New",monospace;font-size:9pt;color:#555}
+
+  #doc table.clist{border-collapse:collapse;width:100%;margin:6pt 0 14pt}
+  #doc table.clist th{text-align:left;font-size:10.5pt;font-weight:600;padding:3pt 6pt 3pt 0;
+    border-bottom:1px solid #6e6e6e}
+  #doc table.clist th.ctn,#doc table.clist td.ctn{width:1.4in;padding-left:8pt}
+  #doc table.clist td{vertical-align:top;padding:3.5pt 6pt 3.5pt 0;border-bottom:1px solid #dcdcdc}
+  /* In the table view the component title outranks the note labels beneath it.
+     Weight and slope carry that through a paste; colour alone would not. */
+  #doc .ftitle{font-weight:600}
+  #doc .flabel{font-weight:400;font-style:italic;color:#333}
+
+  /* a labelled row with nothing in it — visible here, removed on copy */
+  #doc tr.empty-row td.lbl{color:#8a5a2b;font-weight:400;font-style:italic}
+  #doc tr.empty-row td.val::after{content:"—";color:#b08a5a}
+
+  /* the element a margin note points at */
+  #doc .lit > td, #doc h3.lit, #doc h4.lit, #doc p.lit, #doc h1.lit{background:#fbf6ec}
+</style>
+</head>
+<body>
+
+<header>
+  <button id="pick">Open EAD file…</button>
+  <input type="file" id="file" accept=".xml,text/xml,application/xml" hidden>
+  <div class="fname" id="fname"></div>
+  <div class="chips" id="chips"></div>
+  <button id="copy" class="primary" disabled>Copy document</button>
+  <button id="gear" aria-expanded="false">Settings</button>
+
+  <div id="settings">
+    <div class="sgroup">
+      <div class="ttl">ArchivesSpace staff links</div>
+      <label class="opt"><input type="checkbox" id="uselinks" checked> Link components to their records</label>
+      <div class="urlrow">
+        <input type="text" id="aspace">
+        <button class="linkish" id="reseturl">Reset to default</button>
+      </div>
+    </div>
+    <div class="sgroup">
+      <div class="ttl">Collection contents</div>
+      <label class="opt"><input type="radio" name="clmode" value="table" checked> Table</label>
+      <label class="opt"><input type="radio" name="clmode" value="oac"> OAC label rows</label>
+      <label class="opt"><input type="checkbox" id="showref"> Show ref_ids</label>
+    </div>
+    <div class="sgroup">
+      <div class="ttl">Margin notes</div>
+      <label class="opt"><input type="checkbox" id="f-author" checked> To fix mechanically</label>
+      <label class="opt"><input type="checkbox" id="f-reviewer" checked> Needing a judgement</label>
+      <div class="ttl" style="margin-top:6px">Session</div>
+      <button class="linkish" id="forget" style="text-align:left;padding-left:0">Forget saved settings</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="drop">
+    <h2>Drop an EAD export here</h2>
+    <p>ArchivesSpace EAD 2002 or EAD3. Nothing leaves this page.</p>
+    <button id="pick2">Choose a file</button>
+    <p id="lastfile"></p>
+  </div>
+  <div id="stage" hidden>
+    <div id="docwrap"><div id="doc"></div></div>
+    <div id="margin"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   0. SETTINGS THAT SURVIVE A CLOSED TAB
+
+   Settings and the name of the last file, never its contents. The whole
+   basis of the tool is that no collection data leaves the page, and
+   stashing an EAD in browser storage would quietly break that.
+   ===================================================================== */
+
+const STORE_KEY = "fa-review-v0-5";
+const DEFAULT_ASPACE = "https://uclalsc-staff.lyrasistechnology.org/staff/";
+
+/* Storage is unavailable in some sandboxed contexts. Degrade to defaults
+   rather than failing to start. */
+function storeGet(){
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
+  catch(e){ return {}; }
+}
+function storeSet(patch){
+  try {
+    const next = Object.assign(storeGet(), patch);
+    localStorage.setItem(STORE_KEY, JSON.stringify(next));
+  } catch(e){ /* nothing to do; settings just won't persist */ }
+}
+function storeClear(){ try { localStorage.removeItem(STORE_KEY); } catch(e){} }
+
+/* =====================================================================
+   1. PARSE — XML in, plain model out.
+   ===================================================================== */
+
+const EAD2 = "urn:isbn:1-931666-22-9";
+const EAD3 = "http://ead3.archivists.org/schema/";
+
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function textOf(el){ return el ? el.textContent.replace(/\s+/g," ").trim() : ""; }
+
+/* Every generated link opens in a new tab — losing the tool to a stray
+   click is the thing this is guarding against. */
+function extLink(href, label){
+  return '<a href="'+esc(href)+'" target="_blank" rel="noopener">'+label+"</a>";
+}
+
+function inlineHTML(node, ns){
+  let out = "";
+  if (!node) return out;
+  for (const n of node.childNodes){
+    if (n.nodeType === 3){ out += esc(n.nodeValue).replace(/\n[ \t]*\n\s*/g, "</p><p>"); continue; }
+    if (n.nodeType !== 1) continue;
+    const t = n.localName, inner = inlineHTML(n, ns);
+    switch(t){
+      case "emph": {
+        const r = n.getAttribute("render") || "italic";
+        if (r.includes("bold") && r.includes("italic")) out += "<b><i>"+inner+"</i></b>";
+        else if (r.includes("bold")) out += "<b>"+inner+"</b>";
+        else if (r.includes("super")) out += "<sup>"+inner+"</sup>";
+        else if (r.includes("sub")) out += "<sub>"+inner+"</sub>";
+        else if (r.includes("underline")) out += "<u>"+inner+"</u>";
+        else out += "<i>"+inner+"</i>";
+        break;
+      }
+      case "title": case "bibref": out += "<i>"+inner+"</i>"; break;
+      case "lb": out += "<br>"; break;
+      case "extref": case "ref": case "extptr": case "ptr": {
+        const href = n.getAttribute("href") || n.getAttributeNS("http://www.w3.org/1999/xlink","href") || "";
+        const label = inner || n.getAttributeNS("http://www.w3.org/1999/xlink","title") || esc(href);
+        out += href ? extLink(href, label || esc(href)) : label;
+        break;
+      }
+      case "list": {
+        const items = [...n.children].filter(c=>c.localName==="item");
+        const ordered = (n.getAttribute("type")||"").includes("ordered");
+        out += "<"+(ordered?"ol":"ul")+">";
+        for (const it of items) out += "<li>"+inlineHTML(it, ns)+"</li>";
+        out += "</"+(ordered?"ol":"ul")+">";
+        break;
+      }
+      case "chronlist": {
+        out += "<ul>";
+        for (const ci of n.getElementsByTagNameNS(ns,"chronitem")){
+          const d = ci.getElementsByTagNameNS(ns,"date")[0];
+          const ev = [...ci.getElementsByTagNameNS(ns,"event")].map(e=>inlineHTML(e,ns)).join("; ");
+          out += "<li>"+(d?"<b>"+esc(textOf(d))+"</b> — ":"")+ev+"</li>";
+        }
+        out += "</ul>";
+        break;
+      }
+      case "head": break;
+      default: out += inner;
+    }
+  }
+  return out;
+}
+
+function readNote(el, ns){
+  if (!el) return null;
+  const headEl = el.getElementsByTagNameNS(ns,"head")[0];
+  const head = headEl && headEl.parentNode === el ? textOf(headEl) : "";
+  let html = "", plain = "";
+  const blocks = [...el.children].filter(c => c.localName !== "head");
+  for (const b of blocks){
+    if (b.localName === "p"){ html += "<p>"+inlineHTML(b, ns)+"</p>"; plain += textOf(b)+" "; }
+    else { const h = inlineHTML(b, ns); if (h.trim()){ html += h.startsWith("<") ? h : "<p>"+h+"</p>"; plain += textOf(b)+" "; } }
+  }
+  if (!html && !blocks.length){ const h = inlineHTML(el, ns); if (h.trim()){ html = "<p>"+h+"</p>"; plain = textOf(el); } }
+  return { head, html, plain: plain.replace(/\s+/g," ").trim(), type: el.localName };
+}
+
+const NOTE_LABELS = {
+  scopecontent:"Scope and content", bioghist:"Biographical / historical",
+  acqinfo:"Acquisition information", processinfo:"Processing information",
+  arrangement:"Arrangement", custodhist:"Custodial history",
+  appraisal:"Appraisal", accruals:"Accruals",
+  accessrestrict:"Restrictions", userestrict:"Terms of access",
+  prefercite:"Preferred citation", phystech:"Physical characteristics",
+  altformavail:"Alternative form available", originalsloc:"Location of originals",
+  odd:"Other descriptive data", relatedmaterial:"Related materials",
+  separatedmaterial:"Separated materials", otherfindaid:"Other finding aid",
+  bibliography:"Bibliography", fileplan:"File plan", note:"General note",
+  materialspec:"Material specific details", langmaterial:"Language"
+};
+const NOTE_ORDER = ["scopecontent","bioghist","acqinfo","processinfo","arrangement",
+  "custodhist","appraisal","accruals","accessrestrict","userestrict","prefercite",
+  "phystech","altformavail","originalsloc","relatedmaterial","separatedmaterial",
+  "otherfindaid","bibliography","fileplan","odd","note","materialspec"];
+
+const EXPECTED_HEADS = {
+  scopecontent:["scope and contents","scope and content"],
+  bioghist:["biographical / historical","biographical/historical"],
+  acqinfo:["immediate source of acquisition"],
+  processinfo:["processing information"],
+  arrangement:["arrangement"],
+  accessrestrict:["conditions governing access"],
+  userestrict:["conditions governing use","conditions governing reproduction and use"],
+  prefercite:["preferred citation"],
+  custodhist:["custodial history"],
+  relatedmaterial:["related materials"],
+  separatedmaterial:["separated materials"],
+  phystech:["physical characteristics and technical requirements"]
+};
+
+/* Notes every resource record should carry. Everything else is optional,
+   so its absence is silence rather than a gap worth marking. */
+const EXPECTED_NOTES = new Set(["scopecontent","bioghist","acqinfo","processinfo",
+  "arrangement","accessrestrict","userestrict","prefercite"]);
+
+function parseEAD(xmlText){
+  const dom = new DOMParser().parseFromString(xmlText, "application/xml");
+  const err = dom.getElementsByTagName("parsererror")[0];
+  if (err) throw wellFormedError(xmlText, err.textContent);
+  const root = dom.documentElement;
+  const ns = root.namespaceURI;
+  if (ns !== EAD2 && ns !== EAD3)
+    throw new Error("Root element is <"+root.localName+"> in namespace "+(ns||"none")+". Expected EAD 2002 or EAD3.");
+  return (ns === EAD3 ? adaptEAD3 : adaptEAD2)(dom, ns);
+}
+
+function wellFormedError(xmlText, raw){
+  const e = new Error("This file isn't well-formed XML, so nothing downstream can read it.");
+  const lm = /line (\d+)/i.exec(raw||""), cm = /column (\d+)/i.exec(raw||"");
+  const suspects = [];
+  const TAGS = /<\/?([A-Za-z][\w.-]*)[^>]*>/g;
+  const KNOWN = new Set(["ead","eadheader","eadid","filedesc","titlestmt","titleproper","author","num",
+    "publicationstmt","publisher","address","addressline","extptr","p","date","profiledesc","creation",
+    "langusage","language","descrules","revisiondesc","change","item","archdesc","did","repository",
+    "corpname","persname","famname","unittitle","origination","unitid","physdesc","extent","unitdate",
+    "abstract","physloc","langmaterial","materialspec","container","dao","daodesc","dsc","c","c01","c02",
+    "c03","c04","c05","c06","c07","c08","c09","c10","c11","c12","head","list","chronlist","chronitem",
+    "event","emph","lb","title","bibref","extref","ref","ptr","subject","genreform","geogname","occupation",
+    "function","controlaccess","note","odd","scopecontent","bioghist","arrangement","accessrestrict",
+    "userestrict","acqinfo","custodhist","appraisal","accruals","prefercite","processinfo","phystech",
+    "altformavail","originalsloc","relatedmaterial","separatedmaterial","otherfindaid","bibliography",
+    "fileplan","frontmatter","titlepage","div","table","tgroup","thead","tbody","row","entry","legalstatus"]);
+  let mm;
+  while ((mm = TAGS.exec(xmlText))){
+    if (!KNOWN.has(mm[1].toLowerCase())){
+      suspects.push(xmlText.slice(Math.max(0,mm.index-70), mm.index+70).replace(/\s+/g," ").trim());
+      if (suspects.length >= 3) break;
+    }
+  }
+  e.line = lm ? lm[1] : ""; e.column = cm ? cm[1] : "";
+  e.suspects = suspects;
+  e.advice = suspects.length
+    ? "An angle bracket has been typed as literal text somewhere in the record — most often in a revision statement or a note where someone wrote an element name. ArchivesSpace exports it unescaped and the file stops being valid XML. Find the text below in the record, replace < and > with &lt; and &gt;, and re-export."
+    : "Open the file at the position reported above and look for a stray < or > character.";
+  return e;
+}
+
+function adaptEAD2(dom, ns){
+  const g = (el,name) => el ? [...el.getElementsByTagNameNS(ns,name)] : [];
+  const child = (el,name) => el ? [...el.children].find(c=>c.localName===name) : null;
+  const children = (el,name) => el ? [...el.children].filter(c=>c.localName===name) : [];
+
+  const root = dom.documentElement;
+  const hdr = g(root,"eadheader")[0];
+  const ad  = g(root,"archdesc")[0];
+  if (!ad) throw new Error("No <archdesc> found — this doesn't look like a finding aid export.");
+  const did = child(ad,"did");
+
+  const m = { flavour:"EAD 2002", ns };
+
+  const eadidEl = g(hdr,"eadid")[0];
+  m.eadid = textOf(eadidEl);
+  m.publicUrl = eadidEl ? (eadidEl.getAttribute("url")||"") : "";
+  const tps = g(hdr,"titlestmt")[0] ? children(g(hdr,"titlestmt")[0],"titleproper") : [];
+  m.titleproper = textOf(tps.find(t=>t.getAttribute("type")!=="filing")) || textOf(tps[0]);
+  m.filingTitle = textOf(tps.find(t=>t.getAttribute("type")==="filing"));
+  m.author = textOf(g(hdr,"author")[0]);
+  m.creation = textOf(g(hdr,"creation")[0]);
+  m.descrules = textOf(g(hdr,"descrules")[0]);
+
+  m.title = textOf(child(did,"unittitle"));
+  const uids = children(did,"unitid");
+  m.unitid = textOf(uids.find(u=>!u.getAttribute("type")));
+  m.uri = textOf(uids.find(u=>u.getAttribute("type")==="aspace_uri"));
+  m.repository = textOf(child(did,"repository"));
+  m.physloc = textOf(child(did,"physloc"));
+  m.langmaterial = children(did,"langmaterial").map(l=>textOf(l)).filter(Boolean).join("; ");
+  m.languages = [...(child(did,"langmaterial")||did).getElementsByTagNameNS(ns,"language")]
+    .map(l=>textOf(l)).filter(Boolean);
+  m.abstract = child(did,"abstract") ? inlineHTML(child(did,"abstract"), ns) : "";
+
+  m.origination = children(did,"origination").map(o=>{
+    const nm = [...o.children].find(c=>/^(persname|corpname|famname|name)$/.test(c.localName));
+    return { label:o.getAttribute("label")||"", name:textOf(o), kind:nm?nm.localName:"",
+      role:nm?(nm.getAttribute("role")||""):"", source:nm?(nm.getAttribute("source")||""):"",
+      rules:nm?(nm.getAttribute("rules")||""):"", auth:nm?(nm.getAttribute("authfilenumber")||""):"" };
+  });
+
+  m.extents = []; m.physdescNotes = [];
+  for (const pd of children(did,"physdesc")){
+    const ex = [...pd.getElementsByTagNameNS(ns,"extent")];
+    if (ex.length) for (const e of ex) m.extents.push({text:textOf(e), role:e.getAttribute("altrender")||""});
+    else if (textOf(pd)) m.physdescNotes.push({label:pd.getAttribute("label")||"", text:textOf(pd)});
+  }
+
+  m.dates = children(did,"unitdate").map(d=>({
+    text:textOf(d), normal:d.getAttribute("normal")||"", type:d.getAttribute("type")||""
+  }));
+
+  m.notes = {};
+  for (const t of NOTE_ORDER){
+    const list = children(ad,t).map(e=>readNote(e,ns)).filter(Boolean);
+    if (list.length) m.notes[t] = list;
+  }
+
+  const ca = child(ad,"controlaccess");
+  m.access = ca ? [...ca.children].filter(c=>c.localName!=="head").map(c=>({
+    kind:c.localName, term:textOf(c),
+    source:c.getAttribute("source")||"", rules:c.getAttribute("rules")||"",
+    role:c.getAttribute("role")||"", auth:c.getAttribute("authfilenumber")||""
+  })) : [];
+
+  let seq = 0;
+  function readC(el, depth){
+    const d = child(el,"did");
+    const uid = d ? children(d,"unitid") : [];
+    const node = {
+      n: ++seq, depth,
+      level: el.getAttribute("level") || el.getAttribute("otherlevel") || "",
+      refid: (el.getAttribute("id")||"").replace(/^aspace_/,""),
+      uri: textOf(uid.find(u=>u.getAttribute("type")==="aspace_uri")),
+      unitid: textOf(uid.find(u=>!u.getAttribute("type"))),
+      title: d ? inlineHTML(child(d,"unittitle"), ns) : "",
+      titlePlain: textOf(child(d,"unittitle")),
+      rawTitle: d && child(d,"unittitle") ? child(d,"unittitle").textContent : "",
+      dates: d ? children(d,"unitdate").map(x=>({
+        text:textOf(x), normal:x.getAttribute("normal")||"", type:x.getAttribute("type")||""
+      })) : [],
+      extents: d ? [...d.getElementsByTagNameNS(ns,"extent")].map(e=>({text:textOf(e)})) : [],
+      langmaterial: d ? children(d,"langmaterial").map(l=>textOf(l)).filter(Boolean).join("; ") : "",
+      containers: d ? children(d,"container").map(c=>({
+        type:(c.getAttribute("type")||""), value:textOf(c),
+        label:c.getAttribute("label")||"", id:c.getAttribute("id")||"",
+        parent:c.getAttribute("parent")||"", altrender:c.getAttribute("altrender")||""
+      })) : [],
+      daos: g(el,"dao").length, notes: {}, kids: []
+    };
+    for (const t of NOTE_ORDER){
+      const list = children(el,t).map(e=>readNote(e,ns)).filter(Boolean);
+      if (list.length) node.notes[t] = list;
+    }
+    for (const c of [...el.children].filter(c=>/^c(0[1-9]|1[0-2])?$/.test(c.localName)))
+      node.kids.push(readC(c, depth+1));
+    return node;
+  }
+  const dsc = child(ad,"dsc");
+  m.tree = [];
+  if (dsc) for (const c of [...dsc.children].filter(c=>/^c(0[1-9]|1[0-2])?$/.test(c.localName)))
+    m.tree.push(readC(c,0));
+  m.flat = [];
+  (function flat(a){ for (const c of a){ m.flat.push(c); flat(c.kids); } })(m.tree);
+  return m;
+}
+
+function adaptEAD3(dom, ns){
+  const root = dom.documentElement;
+  const child = (el,name)=> el ? [...el.children].find(c=>c.localName===name) : null;
+  const children = (el,name)=> el ? [...el.children].filter(c=>c.localName===name) : [];
+  const g = (el,name)=> el ? [...el.getElementsByTagNameNS(ns,name)] : [];
+
+  const control = g(root,"control")[0];
+  const ad = g(root,"archdesc")[0];
+  if (!ad) throw new Error("No <archdesc> found.");
+  const did = child(ad,"did");
+  const m = { flavour:"EAD3", ns };
+
+  m.eadid = textOf(g(control,"recordid")[0]);
+  m.publicUrl = g(control,"recordid")[0] ? (g(control,"recordid")[0].getAttribute("instanceurl")||"") : "";
+  m.titleproper = textOf(g(control,"titleproper")[0]);
+  m.filingTitle = "";
+  m.author = textOf(g(control,"author")[0]);
+  m.creation = textOf(g(control,"maintenanceevent")[0]);
+  m.descrules = textOf(g(control,"conventiondeclaration")[0]);
+
+  m.title = textOf(child(did,"unittitle"));
+  const uids = children(did,"unitid");
+  m.unitid = textOf(uids.find(u=>!u.getAttribute("localtype")));
+  m.uri = textOf(uids.find(u=>u.getAttribute("localtype")==="aspace_uri"));
+  m.repository = textOf(child(did,"repository"));
+  m.physloc = textOf(child(did,"physloc"));
+  m.langmaterial = children(did,"langmaterial").map(l=>textOf(l)).filter(Boolean).join("; ");
+  m.languages = [...(child(did,"langmaterial")||did).getElementsByTagNameNS(ns,"language")]
+    .map(l=>textOf(l)).filter(Boolean);
+  m.abstract = child(did,"abstract") ? inlineHTML(child(did,"abstract"),ns) : "";
+
+  m.origination = children(did,"origination").map(o=>{
+    const nm = [...o.children].find(c=>/^(persname|corpname|famname|name)$/.test(c.localName));
+    const parts = nm ? [...nm.getElementsByTagNameNS(ns,"part")].map(p=>textOf(p)) : [];
+    return { label:o.getAttribute("label")||"", name: parts.join(", ") || textOf(o),
+      kind:nm?nm.localName:"", role:nm?(nm.getAttribute("relator")||""):"",
+      source:nm?(nm.getAttribute("source")||""):"", rules:nm?(nm.getAttribute("rules")||""):"",
+      auth:nm?(nm.getAttribute("identifier")||""):"" };
+  });
+
+  m.extents = []; m.physdescNotes = [];
+  for (const ps of g(did,"physdescstructured")){
+    const q = textOf(g(ps,"quantity")[0]), u = textOf(g(ps,"unittype")[0]);
+    if (q||u) m.extents.push({ text:(q+" "+u).trim(), role:ps.getAttribute("physdescstructuredtype")||"" });
+  }
+  for (const e of children(did,"physdesc")) if (textOf(e))
+    m.physdescNotes.push({label:e.getAttribute("localtype")||"", text:textOf(e)});
+
+  m.dates = [];
+  for (const d of children(did,"unitdatestructured")){
+    const from = textOf(g(d,"fromdate")[0]), to = textOf(g(d,"todate")[0]);
+    const single = textOf(g(d,"datesingle")[0]);
+    m.dates.push({ text: single || [from,to].filter(Boolean).join("–"),
+      normal: single || [from,to].filter(Boolean).join("/"), type:d.getAttribute("unitdatetype")||"" });
+  }
+  for (const d of children(did,"unitdate"))
+    m.dates.push({text:textOf(d),normal:d.getAttribute("normal")||"",type:d.getAttribute("unitdatetype")||d.getAttribute("type")||""});
+
+  m.notes = {};
+  for (const t of NOTE_ORDER){
+    const list = children(ad,t).map(e=>readNote(e,ns)).filter(Boolean);
+    if (list.length) m.notes[t] = list;
+  }
+  const ca = child(ad,"controlaccess");
+  m.access = ca ? [...ca.children].filter(c=>c.localName!=="head").map(c=>({
+    kind:c.localName,
+    term:[...c.getElementsByTagNameNS(ns,"part")].map(p=>textOf(p)).join(" -- ") || textOf(c),
+    source:c.getAttribute("source")||"", rules:c.getAttribute("rules")||"",
+    role:c.getAttribute("relator")||"", auth:c.getAttribute("identifier")||""
+  })) : [];
+
+  let seq=0;
+  function readC(el,depth){
+    const d = child(el,"did");
+    const uid = d?children(d,"unitid"):[];
+    const node = {
+      n:++seq, depth,
+      level: el.getAttribute("level")||el.getAttribute("otherlevel")||"",
+      refid: (el.getAttribute("id")||"").replace(/^aspace_/,""),
+      uri: textOf(uid.find(u=>u.getAttribute("localtype")==="aspace_uri")),
+      unitid: textOf(uid.find(u=>!u.getAttribute("localtype"))),
+      title: d ? inlineHTML(child(d,"unittitle"),ns) : "",
+      titlePlain: textOf(child(d,"unittitle")),
+      rawTitle: d && child(d,"unittitle") ? child(d,"unittitle").textContent : "",
+      dates: [], extents: [],
+      langmaterial: d?children(d,"langmaterial").map(l=>textOf(l)).filter(Boolean).join("; "):"",
+      containers: d?children(d,"container").map(c=>({
+        type:(c.getAttribute("localtype")||""), value:textOf(c), label:c.getAttribute("label")||"",
+        id:c.getAttribute("id")||"", parent:c.getAttribute("parent")||"", altrender:c.getAttribute("altrender")||""
+      })):[],
+      daos: g(el,"dao").length, notes:{}, kids:[]
+    };
+    if (d){
+      for (const dd of children(d,"unitdatestructured")){
+        const from=textOf(g(dd,"fromdate")[0]),to=textOf(g(dd,"todate")[0]),single=textOf(g(dd,"datesingle")[0]);
+        node.dates.push({text:single||[from,to].filter(Boolean).join("–"),
+          normal:single||[from,to].filter(Boolean).join("/"),type:dd.getAttribute("unitdatetype")||""});
+      }
+      for (const dd of children(d,"unitdate"))
+        node.dates.push({text:textOf(dd),normal:dd.getAttribute("normal")||"",type:dd.getAttribute("unitdatetype")||""});
+      for (const ps of g(d,"physdescstructured")){
+        const q=textOf(g(ps,"quantity")[0]),u=textOf(g(ps,"unittype")[0]);
+        if (q||u) node.extents.push({text:(q+" "+u).trim()});
+      }
+    }
+    for (const t of NOTE_ORDER){
+      const list = children(el,t).map(e=>readNote(e,ns)).filter(Boolean);
+      if (list.length) node.notes[t]=list;
+    }
+    for (const c of children(el,"c")) node.kids.push(readC(c,depth+1));
+    return node;
+  }
+  const dsc = child(ad,"dsc");
+  m.tree = dsc ? children(dsc,"c").map(c=>readC(c,0)) : [];
+  m.flat = [];
+  (function flat(a){for(const c of a){m.flat.push(c);flat(c.kids);}})(m.tree);
+  return m;
+}
+
+/* =====================================================================
+   2. VALIDATE
+
+   severity  error | warn | info
+   audience  author   — mechanical
+             reviewer — needs a judgement
+
+   Anchors name the place in the rendered document a note points at:
+     {scope:"collection", field:"dates", text:"…"}
+     {scope:"component",  n:37, field:"title", text:"…"}
+   A finding with no anchor is shown against the document header.
+   ===================================================================== */
+
+const CONTAINER_TYPES = new Set(["box","folder","carton","reel","volume","frame","case",
+  "drawer","item","object","page","cassette","tube","oversize","portfolio","envelope",
+  "flat box","oversize flat box","map case","tray","binder","sheet"]);
+
+const AGENT_ROLES = new Set(["creator","source","subject"]);
+const RELATORS = {
+  app:"Appraiser", brd:"Broadcaster", cng:"Cinematographer", col:"Collector",
+  cmp:"Composer", ctb:"Contributor", cre:"Creator", cur:"Curator", drt:"Director",
+  dnr:"Donor", edm:"Editor of Moving Image Work", fmo:"Former owner",
+  ivr:"Interviewer", ive:"Interviewee", prf:"Performer", prs:"Production Designer",
+  pbl:"Publisher", sll:"Seller"
+};
+const AGENT_SOURCES = new Set(["naf","ulan","local"]);
+const AGENT_SOURCE_LEGACY = { lcnaf:"naf", nad:"naf" };
+const AGENT_RULES = new Set(["rda","dacs","aacr","local"]);
+const SUBJECT_SOURCES = new Set(["aat","rbgenr","tgn","lcsh","local","mesh"]);
+const URI_BEARING = new Set(["aat","tgn","lcsh","mesh","naf","ulan"]);
+
+const PLACEHOLDER = /\[(?:[^\]]*(?:name|title|date|number|insert|xx+|tbd|todo|collection|repository|creator|extent|donor|year)[^\]]*)\]|\bTBD\b|\bTODO\b|\bXXX+\b|\bLorem ipsum\b/i;
+const NAMEISH = /^[A-Z][A-Za-zÀ-ÿ'’-]+,\s+[A-Z][A-Za-zÀ-ÿ.'’-]+/;
+
+function yearRange(normal){
+  if (!normal) return null;
+  const parts = String(normal).split("/");
+  const a = (parts[0]||"").slice(0,4), b = (parts[1]||parts[0]||"").slice(0,4);
+  if (!/^\d{4}$/.test(a) || !/^\d{4}$/.test(b)) return null;
+  return [parseInt(a,10), parseInt(b,10)];
+}
+function nodeRange(node){
+  const rs = (node.dates||[]).map(d=>yearRange(d.normal)).filter(Boolean);
+  if (!rs.length) return null;
+  return [Math.min(...rs.map(r=>r[0])), Math.max(...rs.map(r=>r[1]))];
+}
+function where(node){ return node.titlePlain || "(untitled)"; }
+function datesOf(c){ return (c.dates||[]).map(d=>d.text).filter(Boolean).join(", "); }
+
+function validate(m){
+  const out = [];
+  const add = (sev, audience, rule, msg, items, detail, anchors) =>
+    out.push({sev, audience, rule, msg, items: items||[], detail: detail||"", anchors: anchors||[]});
+  const A = (n, field, text) => ({scope:"component", n, field, text});
+  const C = (field, text) => ({scope:"collection", field, text});
+
+  const REQUIRED = [
+    ["title", m.title, "Collection title"], ["unitid", m.unitid, "Collection identifier"],
+    ["extent", m.extents.length, "Extent"], ["dates", m.dates.length, "Inclusive dates"],
+    ["origination", m.origination.length, "Creator"], ["repository", m.repository, "Repository"],
+    ["langmaterial", m.langmaterial, "Language of materials"], ["abstract", m.abstract, "Abstract"],
+    ["scopecontent", m.notes.scopecontent, "Scope and content"],
+    ["bioghist", m.notes.bioghist, "Biographical / historical"],
+    ["accessrestrict", m.notes.accessrestrict, "Restrictions"],
+    ["userestrict", m.notes.userestrict, "Terms of access"],
+    ["acqinfo", m.notes.acqinfo, "Acquisition information"],
+    ["prefercite", m.notes.prefercite, "Preferred citation"],
+    ["processinfo", m.notes.processinfo, "Processing information"],
+    ["arrangement", m.notes.arrangement, "Arrangement"]
+  ];
+  const missing = REQUIRED.filter(r=>!r[1]);
+  if (missing.length) add("error","author","collection-required",
+    missing.length+" required collection-level element"+(missing.length>1?"s are":" is")+" missing",
+    missing.map(r=>({text:r[2]})), "", missing.map(r=>C(r[0], "required, not recorded")));
+  else add("pass","author","collection-required","All required collection-level elements are present");
+
+  if (m.unitid && !/^[A-Z]{2,6}\.\d{3,5}$/.test(m.unitid))
+    add("warn","author","identifier-format","Identifier isn't in the expected form",
+      [{text:m.unitid}], "Expected a repository prefix, a full stop and a zero-padded number — LSC.2446, PASC.0157, UARC.0279.",
+      [C("unitid","“"+m.unitid+"” is not in the form PREFIX.nnnn")]);
+
+  if (!m.publicUrl) add("info","author","eadid-url","No ARK recorded on <eadid>", [],
+    "OAC needs the ARK to match the guide to its existing record.",
+    [C("permalink","no ARK recorded")]);
+
+  const ph = [], phA = [];
+  for (const k in m.notes) m.notes[k].forEach(n=>{
+    if (n.plain && PLACEHOLDER.test(n.plain)){
+      ph.push({text:NOTE_LABELS[k]||k, where:n.plain.slice(0,110)});
+      phA.push(C(k, "unfilled placeholder text"));
+    }
+  });
+  if (m.abstract && PLACEHOLDER.test(m.abstract.replace(/<[^>]+>/g,""))){
+    ph.push({text:"Abstract"}); phA.push(C("abstract","unfilled placeholder text"));
+  }
+  for (const c of m.flat){
+    for (const k in c.notes) for (const n of c.notes[k])
+      if (n.plain && PLACEHOLDER.test(n.plain)){
+        ph.push({text:where(c)+" — "+(NOTE_LABELS[k]||k)}); phA.push(A(c.n, k, "unfilled placeholder text"));
+      }
+    if (PLACEHOLDER.test(c.titlePlain)){
+      ph.push({text:where(c)+" — title"}); phA.push(A(c.n,"title","unfilled placeholder text"));
+    }
+  }
+  if (ph.length) add("error","author","placeholder","Unfilled template placeholder text", ph,
+    "Bracketed prompts, TBD, TODO or XXX left in from the boilerplate.", phA);
+  else add("pass","author","placeholder","No unfilled template placeholders found");
+
+  if (m.title){
+    const stale = [], staleA = [];
+    const titleWords = m.title.toLowerCase().replace(/[^a-z ]/g,"").split(/\s+/).filter(w=>w.length>4);
+    for (const k of ["prefercite","acqinfo","processinfo","userestrict","accessrestrict"])
+      for (const n of (m.notes[k]||[])){
+        if (!/(?:papers|collection|records|archive)\b/i.test(n.plain)) continue;
+        if (titleWords.some(w=>n.plain.toLowerCase().includes(w))) continue;
+        stale.push({text:NOTE_LABELS[k], where:n.plain.slice(0,120)});
+        staleA.push(C(k,"names a collection, but not this one"));
+      }
+    if (stale.length) add("warn","reviewer","boilerplate-name",
+      "Boilerplate note refers to a collection but not to this one", stale,
+      "Often a note copied from another record with the name not swapped. Heuristic — it looks for words from the title.",
+      staleA);
+  }
+
+  const heads = [], headsA = [];
+  for (const k in m.notes) for (const n of m.notes[k]){
+    const exp = EXPECTED_HEADS[k];
+    if (!exp || !n.head) continue;
+    if (!exp.includes(n.head.toLowerCase().replace(/\s+/g," ").trim())){
+      heads.push({text:NOTE_LABELS[k]||k, where:'heading reads “'+n.head+'”'});
+      headsA.push(C(k, "heading reads “"+n.head+"”, not “"+exp[0]+"”"));
+    }
+  }
+  if (heads.length) add("info","author","note-heading",
+    "Note heading differs from the ArchivesSpace default", heads,
+    "OAC prints its own label and ignores this, so it never shows publicly — but a hand-edited heading usually means the note came from elsewhere.",
+    headsA);
+
+  const boxNums = new Set();
+  for (const c of m.flat) for (const k of c.containers)
+    if (/box|carton|reel|volume/i.test(k.type)) boxNums.add(k.type.toLowerCase()+" "+k.value);
+  let declared = 0;
+  for (const e of m.extents){
+    const mm = e.text.match(/(\d+)\s*(box|boxes|carton|cartons|reel|reels|volume|volumes|flat box|flat boxes|oversize box|oversize boxes|letter box|letter boxes)/gi);
+    if (mm) for (const seg of mm) declared += parseInt(seg,10);
+  }
+  if (declared && boxNums.size){
+    if (declared === boxNums.size)
+      add("pass","author","extent-arithmetic","Extent matches the container list ("+declared+" containers)");
+    else add("error","author","extent-arithmetic",
+      "Extent declares "+declared+" containers but the contents use "+boxNums.size,
+      [...boxNums].sort().map(t=>({text:t})),
+      "Counts distinct top containers named in the components.",
+      [C("extent","declares "+declared+" containers; the contents use "+boxNums.size)]);
+  }
+  if (!m.extents.find(e=>/linear (feet|foot)/i.test(e.text)))
+    add("warn","author","extent-arithmetic","No linear footage in the extent statement", [], "",
+      [C("extent","no linear footage given")]);
+
+  const badType = [], badTypeA = [];
+  for (const c of m.flat) for (const k of c.containers){
+    if (!k.type){ badType.push({text:where(c), where:"no type"}); badTypeA.push(A(c.n,"container","container has no type")); }
+    else if (!CONTAINER_TYPES.has(k.type.toLowerCase())){
+      badType.push({text:where(c), where:'type="'+k.type+'"'});
+      badTypeA.push(A(c.n,"container",'container type “'+k.type+'” is not in the vocabulary'));
+    }
+  }
+  if (badType.length) add("error","author","container-type",
+    "Container type outside the controlled vocabulary", badType,
+    "ArchivesSpace container types are lowercase and singular. A stray value breaks sorting and container management.",
+    badTypeA);
+  else add("pass","author","container-type","All container types are in the controlled vocabulary");
+
+  const orphan = [], orphanA = [];
+  for (const c of m.flat){
+    const ids = new Set(c.containers.map(k=>k.id).filter(Boolean));
+    for (const k of c.containers) if (k.parent && !ids.has(k.parent)){
+      orphan.push({text:where(c), where:k.type+" "+k.value});
+      orphanA.push(A(c.n,"container",k.type+" "+k.value+" has no matching top container"));
+    }
+    if (c.containers.length && !c.containers.some(k=>/box|carton|reel|volume/i.test(k.type))){
+      orphan.push({text:where(c), where:"sub-container with no top container"});
+      orphanA.push(A(c.n,"container","sub-container with no top container"));
+    }
+  }
+  if (orphan.length) add("warn","author","container-parent","Sub-container with no matching top container", orphan, "", orphanA);
+
+  const cRange = nodeRange(m);
+  const outside = [], outsideA = [];
+  (function walk(nodes, parent, parentLabel){
+    for (const n of nodes){
+      const r = nodeRange(n);
+      if (r && parent && (r[0] < parent[0] || r[1] > parent[1])){
+        outside.push({text:where(n), where:r[0]+"–"+r[1]+" outside "+parentLabel+" "+parent[0]+"–"+parent[1]});
+        outsideA.push(A(n.n,"dates", r[0]+"–"+r[1]+" is not inside "+parentLabel+" "+parent[0]+"–"+parent[1]));
+      }
+      walk(n.kids, r||parent, r?"“"+where(n)+"”":parentLabel);
+    }
+  })(m.tree, cRange, "the collection dates");
+  if (outside.length) add("error","reviewer","date-containment",
+    "Component dates fall outside their parent's range", outside,
+    "Either the parent's inclusive dates need widening or the component date is wrong. The topmost usually explains the rest.",
+    outsideA);
+  else if (cRange) add("pass","reviewer","date-containment","All component dates fall within their parent's range");
+
+  for (const d of m.dates){
+    const r = yearRange(d.normal), t = yearRange((d.text||"").replace(/[–—]/,"-").replace("-","/"));
+    if (r && t && (r[0]!==t[0] || r[1]!==t[1]))
+      add("error","author","date-integrity","Collection date display and normalised value disagree",
+        [{text:'displayed "'+d.text+'", normalised "'+d.normal+'"'}],
+        "The normalised value drives sorting and OAC's date facets; the display value is what a reader sees.",
+        [C("dates",'displayed “'+d.text+'” but normalised “'+d.normal+'”')]);
+  }
+
+  const badDate = [], badDateA = [];
+  const thisYear = new Date().getFullYear();
+  for (const c of m.flat) for (const d of c.dates){
+    const r = yearRange(d.normal);
+    if (!r){ if (d.normal){ badDate.push({text:where(c), where:'normal="'+d.normal+'" unparseable'});
+      badDateA.push(A(c.n,"dates",'normalised value “'+d.normal+'” cannot be read')); } continue; }
+    if (r[0] > r[1]){ badDate.push({text:where(c), where:"end precedes start"});
+      badDateA.push(A(c.n,"dates","end date precedes start date ("+d.normal+")")); }
+    if (r[1] > thisYear){ badDate.push({text:where(c), where:"future date"});
+      badDateA.push(A(c.n,"dates","date is in the future ("+d.normal+")")); }
+    if (d.text && /^\d{4}(\s*[-–]\s*\d{4})?$/.test(d.text)){
+      const t = yearRange(d.text.replace(/\s/g,"").replace(/[–-]/,"/"));
+      if (t && (t[0]!==r[0] || t[1]!==r[1])){
+        badDate.push({text:where(c), where:'displayed "'+d.text+'" ≠ normalised "'+d.normal+'"'});
+        badDateA.push(A(c.n,"dates",'displayed “'+d.text+'” but normalised “'+d.normal+'”'));
+      }
+    }
+  }
+  if (badDate.length) add("error","author","date-integrity","Date values are inconsistent or implausible", badDate, "", badDateA);
+  else add("pass","author","date-integrity","Component date values are internally consistent");
+
+  const noTitle = m.flat.filter(c=>!c.titlePlain);
+  if (noTitle.length) add("error","author","component-title",
+    noTitle.length+" component"+(noTitle.length>1?"s have":" has")+" no title",
+    noTitle.map(c=>({text:"component "+c.n})), "", noTitle.map(c=>A(c.n,"title","no title recorded")));
+
+  const noDate = m.flat.filter(c=>!c.dates.length);
+  if (noDate.length) add("warn","reviewer","component-date",
+    noDate.length+" of "+m.flat.length+" components have no date",
+    noDate.map(c=>({text:where(c), where:c.level})),
+    "Undated is a legitimate outcome, but it should be a decision rather than an omission.",
+    noDate.map(c=>A(c.n,"dates","no date recorded")));
+
+  const scopeLevels = new Set(["series","subseries"]);
+  const noScope = m.flat.filter(c=>!c.notes.scopecontent && scopeLevels.has(c.level));
+  if (noScope.length) add("warn","reviewer","series-scope",
+    noScope.length+" series or subseries have no scope and content note",
+    noScope.map(c=>({text:where(c), where:c.level})),
+    "A series without a scope note leaves the reader to infer its shape from the file titles.",
+    noScope.map(c=>A(c.n,"scopecontent","no scope and content note")));
+
+  const noScopeFile = m.flat.filter(c=>!c.notes.scopecontent && !scopeLevels.has(c.level));
+  if (noScopeFile.length) add("info","reviewer","component-scope",
+    noScopeFile.length+" of "+m.flat.length+" components below series level have no scope note",
+    [], "Normal at file level; noted so the proportion is visible.");
+
+  const byNote = {};
+  for (const c of m.flat) for (const k in c.notes) for (const n of c.notes[k]){
+    if (!n.plain || n.plain.length < 12) continue;
+    const key = k+"::"+n.plain.toLowerCase();
+    (byNote[key] = byNote[key] || {label:NOTE_LABELS[k]||k, text:n.plain, hits:[]}).hits.push(c);
+  }
+  const repeated = Object.values(byNote).filter(v=>v.hits.length >= Math.max(5, Math.ceil(m.flat.length*0.15)))
+    .sort((a,b)=>b.hits.length-a.hits.length);
+  if (repeated.length) add("info","reviewer","repeated-note",
+    "Identical note text repeated across many components",
+    repeated.map(v=>({text:v.hits.length+"× "+v.label, where:v.text.slice(0,110)})),
+    "Threshold is five components or fifteen per cent of them, whichever is greater.");
+
+  const mismatch = [], mismatchA = [];
+  for (const c of m.flat) for (const n of (c.notes.arrangement||[]))
+    if (/\bcontents of a box\b/i.test(n.plain) && c.level && !scopeLevels.has(c.level)){
+      mismatch.push({text:where(c), where:'level="'+c.level+'"'});
+      mismatchA.push(A(c.n,"arrangement",'note describes a box but the level is “'+c.level+'”'));
+    }
+  if (mismatch.length) add("warn","reviewer","arrangement-wording",
+    "Arrangement note describes a different unit than the component's level", mismatch,
+    "Only one wording is tested. The general form of this rule was abandoned as unworkable.",
+    mismatchA);
+
+  /* ---- Agent Records ---- */
+  const creators = m.origination.filter(o=>/^creator$/i.test(o.label));
+  const sources  = m.origination.filter(o=>/^source$/i.test(o.label));
+
+  const badRole = m.origination.filter(o=>o.label && !AGENT_ROLES.has(o.label.toLowerCase()));
+  if (badRole.length) add("error","author","agent-role","Agent role is not Creator, Source or Subject",
+    badRole.map(o=>({text:o.name, where:'label="'+o.label+'"'})), "",
+    badRole.map(()=>C("origination","agent role is not Creator, Source or Subject")));
+
+  if (!creators.length) add("error","author","agent-required-creator",
+    "No agent is linked with the role Creator", [],
+    "Every resource record should carry at least one Creator-role agent link.",
+    [C("origination","no Creator-role agent linked")]);
+
+  if (!sources.length) add("warn","reviewer","agent-required-source",
+    "No agent is linked with the role Source", [],
+    "Donors, sellers and acquiring curators are required as Source links where known. An absence may be correct for a transfer.",
+    [C("origination","no Source-role agent linked")]);
+
+  const noRelator = sources.filter(o=>!o.role);
+  if (noRelator.length) add("error","author","agent-relator","Source-role agent with no relator",
+    noRelator.map(o=>({text:o.name})), "A Source link needs a relator — Donor, Seller, Curator, Former owner.",
+    noRelator.map(()=>C("origination","Source-role agent with no relator")));
+
+  const badRelator = m.origination.filter(o=>o.role && !RELATORS[o.role.toLowerCase()]);
+  if (badRelator.length) add("warn","author","agent-relator-vocab","Relator outside the permitted list",
+    badRelator.map(o=>({text:o.name, where:'role="'+o.role+'"'})),
+    "Permitted: "+Object.values(RELATORS).join(", ")+".",
+    badRelator.map(o=>C("origination",'relator “'+o.role+'” is not in the permitted list')));
+
+  /* The same agent usually appears as both origination and access point.
+     Collapse to one finding, anchored where an author looks first. */
+  const agentish = []; const agentSeen = new Set();
+  for (const o of [
+    ...m.origination.map(o=>({...o, field:"origination"})),
+    ...m.access.filter(a=>/^(persname|corpname|famname)$/.test(a.kind)).map(a=>({...a, name:a.term, field:"access-names"}))
+  ]){
+    const key = ((o.name||"").split("--")[0].trim().toLowerCase())+"|"+o.source+"|"+o.rules+"|"+o.auth;
+    if (agentSeen.has(key)) continue;
+    agentSeen.add(key); agentish.push(o);
+  }
+
+  const agentSrc = [], agentSrcA = [];
+  for (const a of agentish){
+    const s = (a.source||"").toLowerCase(), nm = a.name||a.term;
+    if (!s){ agentSrc.push({text:nm, where:"no source"}); agentSrcA.push(C(a.field,"“"+nm+"” has no source vocabulary")); continue; }
+    if (s === "ingest"){ agentSrc.push({text:nm, where:'source="ingest"'});
+      agentSrcA.push(C(a.field,"“"+nm+"” still has the ingest default as its source")); continue; }
+    if (AGENT_SOURCE_LEGACY[s]){ agentSrc.push({text:nm, where:'source="'+s+'" — legacy for "'+AGENT_SOURCE_LEGACY[s]+'"'});
+      agentSrcA.push(C(a.field,"“"+nm+"” uses legacy source “"+s+"” for “"+AGENT_SOURCE_LEGACY[s]+"”")); continue; }
+    if (!AGENT_SOURCES.has(s)){ agentSrc.push({text:nm, where:'source="'+s+'"'});
+      agentSrcA.push(C(a.field,"“"+nm+"” has source “"+s+"”, outside the permitted list")); }
+  }
+  if (agentSrc.length) add("error","author","agent-source",
+    "Agent source vocabulary missing or outside the permitted list", agentSrc,
+    "Permitted: NACO Authority File (naf), ULAN (ulan), Local sources (local). An imported agent arrives with an unspecified ingest source and should be corrected immediately.",
+    agentSrcA);
+  else if (agentish.length) add("pass","author","agent-source","All agent sources are in the permitted list");
+
+  const ruleTrouble = [], ruleTroubleA = [];
+  for (const a of agentish){
+    const s = (a.source||"").toLowerCase(), r = (a.rules||"").toLowerCase(), nm = a.name||a.term;
+    if (r && !AGENT_RULES.has(r)){
+      ruleTrouble.push({text:nm, where:'rules="'+r+'"'});
+      ruleTroubleA.push(C(a.field,"“"+nm+"” has rules “"+r+"”, outside the permitted list"));
+    } else if (s === "local" && r !== "rda"){
+      ruleTrouble.push({text:nm, where:r ? 'local source but rules="'+r+'"' : "local source but no rules"});
+      ruleTroubleA.push(C(a.field,"“"+nm+"” is locally formulated, so rules should be RDA"+(r?", not “"+r+"”":"")));
+    }
+  }
+  if (ruleTrouble.length) add("warn","author","agent-rules",
+    "Descriptive rules don't follow the guideline for locally formulated names", ruleTrouble,
+    "Rules records the standard used to formulate a name locally. Where the source is Local, the guideline is RDA.",
+    ruleTroubleA);
+
+  const noAuthAgent = agentish.filter(a=>URI_BEARING.has((a.source||"").toLowerCase()) && !a.auth);
+  if (noAuthAgent.length) add("warn","author","agent-authority-id",
+    "Agent from an authority file with no authority URI",
+    noAuthAgent.map(a=>({text:a.name||a.term, where:'source="'+a.source+'"'})),
+    "If the name came from an authority file its URI exists, and the guideline requires it.",
+    noAuthAgent.map(a=>C(a.field,"“"+(a.name||a.term)+"” is from "+a.source+" but carries no authority URI")));
+
+  /* ---- Subject Records ---- */
+  const subjectish = m.access.filter(a=>!/^(persname|corpname|famname)$/.test(a.kind));
+
+  const subSrc = [], subSrcA = [];
+  for (const a of subjectish){
+    const s = (a.source||"").toLowerCase();
+    if (!s){ subSrc.push({text:a.term, where:a.kind+", no source"});
+      subSrcA.push(C("access-subjects","“"+a.term+"” has no source vocabulary")); continue; }
+    if (!SUBJECT_SOURCES.has(s)){ subSrc.push({text:a.term, where:'source="'+s+'"'});
+      subSrcA.push(C("access-subjects","“"+a.term+"” has source “"+s+"”, outside the permitted list")); }
+  }
+  if (subSrc.length) add("error","author","subject-source",
+    "Subject source vocabulary missing or outside the permitted list", subSrc,
+    "Permitted: AAT, RBMS Genre Terms, Getty TGN, LCSH, MeSH, Local sources. A constructed heading string with no identifier belongs under Local sources.",
+    subSrcA);
+  else if (subjectish.length) add("pass","author","subject-source","All subject sources are in the permitted list");
+
+  const noAuthSub = subjectish.filter(a=>URI_BEARING.has((a.source||"").toLowerCase()) && !a.auth);
+  if (noAuthSub.length) add("warn","author","subject-authority-id",
+    "Subject from a controlled vocabulary with no authority URI",
+    noAuthSub.map(a=>({text:a.term, where:'source="'+a.source+'"'})),
+    "A constructed heading string with no identifier of its own belongs under Local sources instead.",
+    noAuthSub.map(a=>C("access-subjects","“"+a.term+"” is from "+a.source+" but carries no authority URI")));
+
+  const termForm = [], termFormA = [];
+  for (const a of m.access){
+    const probs = [];
+    const isName = /^(persname|corpname|famname)$/.test(a.kind);
+    if (!isName && /\.\s*$/.test(a.term) && !/\b[A-Z]\.\s*$/.test(a.term)) probs.push("ends with a full stop");
+    if (/\S--/.test(a.term) || /--\S/.test(a.term)) probs.push("subdivision dashes need a space either side");
+    if (/\s{2,}/.test(a.term)) probs.push("double space");
+    for (const p of probs){
+      termForm.push({text:a.term, where:p});
+      termFormA.push(C(isName?"access-names":"access-subjects","“"+a.term+"” — "+p));
+    }
+  }
+  if (termForm.length) add("warn","author","access-term-form",
+    "Access term is not written in the standard form", termForm,
+    "A heading carries no terminal full stop, and subdivisions are separated by a spaced double hyphen. These strings are matched literally against an authority, so the punctuation matters.",
+    termFormA);
+
+  const archivalRes = m.access.filter(a=>/--\s*Archival resources\s*$/i.test(a.term));
+  if (archivalRes.length) add("error","author","subject-archival-resources",
+    "Discontinued subdivision “Archival resources”", archivalRes.map(a=>({text:a.term})),
+    "Legacy local practice, discontinued for subjects and occupations. Use “Archives”.",
+    archivalRes.map(a=>C("access-subjects","“"+a.term+"” uses the discontinued subdivision Archival resources")));
+
+  const topical = m.access.filter(a=>a.kind==="subject");
+  if (topical.length > 3) add("info","reviewer","subject-count",
+    topical.length+" topical subject headings", topical.map(a=>({text:a.term})),
+    "The guideline is that three is generally sufficient, and that a topic should account for roughly a third of the collection to earn a heading.",
+    [C("access-subjects", topical.length+" topical headings; the guideline suggests three is generally enough")]);
+
+  const nameAsSubject = m.access.filter(a=>a.kind==="subject" && NAMEISH.test(a.term));
+  if (nameAsSubject.length) add("warn","author","subject-is-a-name",
+    "Subject term looks like a personal name", nameAsSubject.map(a=>({text:a.term})),
+    "Persons, families and corporate bodies used as subjects belong in Agent records linked with the Subject role. Heuristic — it matches inverted name form.",
+    nameAsSubject.map(a=>C("access-subjects","“"+a.term+"” reads as a personal name; names as subjects belong in Agent records")));
+
+  const front = ((m.abstract||"")+" "+((m.notes.scopecontent||[]).map(n=>n.plain).join(" "))+" "+
+                 ((m.notes.bioghist||[]).map(n=>n.plain).join(" "))).toLowerCase();
+  if (front.length > 80){
+    const subjectKinds = new Set(["subject","genreform","occupation","function","geogname","title"]);
+    const unsupported = m.access.filter(a=>subjectKinds.has(a.kind)).filter(a=>{
+      const lead = (a.term.split("--")[0]||"").trim().toLowerCase();
+      const w = lead.split(/\s+/).filter(x=>x.length>4);
+      return w.length && !w.some(x=>front.includes(x.replace(/s$/,"")));
+    });
+    if (unsupported.length) add("info","reviewer","subject-frontmatter",
+      "Access term with no obvious support in the front matter",
+      unsupported.map(a=>({text:a.term, where:a.kind})),
+      "Headings should correspond to information given in the front matter. Word-matching only — a heading can be justified by description using different words.",
+      unsupported.map(a=>C("access-subjects","“"+a.term+"” is not reflected in the abstract, scope or biographical note")));
+  }
+
+  const kinds = new Set(m.access.map(a=>a.kind));
+  const gaps = [];
+  if (!m.access.length) gaps.push({text:"No access points at all"});
+  else {
+    if (!kinds.has("persname") && !kinds.has("corpname") && !kinds.has("famname")) gaps.push({text:"No name access points"});
+    if (!kinds.has("subject")) gaps.push({text:"No topical subject headings"});
+    if (!kinds.has("genreform")) gaps.push({text:"No genre/form terms"});
+  }
+  if (gaps.length) add("warn","reviewer","access-points","Gaps in the controlled access terms", gaps,
+    "Creators named in the title normally also appear as name access points.",
+    gaps.map(x=>C("access-gap", x.text.toLowerCase())));
+  else add("pass","reviewer","access-points","Names, subjects and genre/form terms are all present");
+
+  const series = m.tree.filter(c=>c.level==="series");
+  const nums = series.map(c=>{ const mm = c.titlePlain.match(/^Series\s+(\d+)/i); return mm?parseInt(mm[1],10):null; });
+  if (series.length && nums.every(n=>n!==null)){
+    if (nums.some((n,i)=>n !== i+1)) add("error","author","series-numbering","Series numbers are not sequential from 1",
+      series.map((c,i)=>({text:c.titlePlain, where:"expected Series "+(i+1)})), "",
+      series.filter((c,i)=>nums[i]!==i+1).map(c=>A(c.n,"title","series numbering is out of sequence")));
+    else add("pass","author","series-numbering","Series are numbered sequentially");
+  } else if (series.length && nums.some(n=>n===null)){
+    add("warn","author","series-numbering","Some series titles don't begin with a series number",
+      series.filter((c,i)=>nums[i]===null).map(c=>({text:c.titlePlain})), "",
+      series.filter((c,i)=>nums[i]===null).map(c=>A(c.n,"title","title doesn't begin with a series number")));
+  }
+
+  for (const n of (m.notes.arrangement||[])){
+    const listed = [...n.plain.matchAll(/Series\s+(\d+)[:.]?\s*([^(\n]{2,70}?)\s*\((\d{4})\s*[–-]\s*(\d{4})\)/g)];
+    const probs = [], probsA = [];
+    for (const L of listed){
+      const num = parseInt(L[1],10), lo = parseInt(L[3],10), hi = parseInt(L[4],10);
+      const actual = series.find(c=>new RegExp("^Series\\s+"+num+"\\b","i").test(c.titlePlain));
+      if (!actual){ probs.push({text:"Series "+num+" listed but not in the contents"});
+        probsA.push(C("arrangement","Series "+num+" is listed here but absent from the contents")); continue; }
+      const r = nodeRange(actual);
+      if (r && (r[0]!==lo || r[1]!==hi)){
+        probs.push({text:actual.titlePlain, where:"note says "+lo+"–"+hi+", record says "+r[0]+"–"+r[1]});
+        probsA.push(C("arrangement","Series "+num+": note says "+lo+"–"+hi+", the record says "+r[0]+"–"+r[1]));
+        probsA.push(A(actual.n,"dates","the arrangement note gives "+lo+"–"+hi+" for this series"));
+      }
+      const noteTitle = (L[2]||"").trim().toLowerCase();
+      const realTitle = actual.titlePlain.replace(/^Series\s+\d+[:.]?\s*/i,"").replace(/,\s*\d{4}.*$/,"").trim().toLowerCase();
+      if (noteTitle && realTitle && noteTitle !== realTitle){
+        probs.push({text:"Series "+num, where:'note: "'+L[2].trim()+'", record: "'+actual.titlePlain.replace(/^Series\s+\d+[:.]?\s*/i,"")+'"'});
+        probsA.push(C("arrangement","Series "+num+" is titled “"+L[2].trim()+"” here and “"+actual.titlePlain.replace(/^Series\s+\d+[:.]?\s*/i,"")+"” in the contents"));
+      }
+    }
+    for (const s of series){
+      const mm = s.titlePlain.match(/^Series\s+(\d+)/i);
+      if (mm && listed.length && !listed.some(L=>parseInt(L[1],10)===parseInt(mm[1],10))){
+        probs.push({text:s.titlePlain, where:"in the contents but absent from the note"});
+        probsA.push(A(s.n,"title","this series is not listed in the arrangement note"));
+      }
+    }
+    if (probs.length) add("error","author","arrangement-sync",
+      "The arrangement note disagrees with the collection contents", probs,
+      "A hand-typed series list drifts out of date as soon as anything is renumbered, retitled or redated.", probsA);
+    else if (listed.length) add("pass","author","arrangement-sync","The arrangement note's series list agrees with the contents");
+  }
+
+  const slotMap = {};
+  for (const c of m.flat){
+    if (!c.containers.length) continue;
+    const key = c.containers.map(k=>(k.type||"?").toLowerCase()+" "+k.value).join(" / ");
+    (slotMap[key] = slotMap[key] || []).push(c);
+  }
+  const collisions = Object.entries(slotMap).filter(([k,v])=>v.length>1 && /folder|item|frame|page/i.test(k));
+  if (collisions.length) add("warn","reviewer","container-collision",
+    collisions.length+" container location"+(collisions.length>1?"s are":" is")+" used by more than one component",
+    collisions.map(([k,v])=>({text:k, where:v.map(c=>where(c)).join(" · ")})),
+    "Two components in one folder is sometimes deliberate and sometimes a copy-paste error.");
+  else if (Object.keys(slotMap).length) add("pass","reviewer","container-collision","No two components share a container location");
+
+  const byBox = {};
+  for (const c of m.flat){
+    const box = c.containers.find(k=>/box|carton|reel|volume/i.test(k.type));
+    const fol = c.containers.find(k=>/folder/i.test(k.type));
+    if (!box || !fol) continue;
+    const nfol = parseInt(String(fol.value).replace(/\D+/g,""),10);
+    if (!isNaN(nfol)){
+      const key = box.type.toLowerCase()+" "+box.value;
+      (byBox[key] = byBox[key] || []).push(nfol);
+    }
+  }
+  const seqGaps = [];
+  for (const b in byBox){
+    const set = [...new Set(byBox[b])].sort((x,y)=>x-y);
+    const holes = [];
+    for (let i=set[0]; i<=set[set.length-1]; i++) if (!set.includes(i)) holes.push(i);
+    if (holes.length) seqGaps.push({text:b, where:"missing folder "+holes.slice(0,12).join(", ")+(holes.length>12?"…":"")});
+  }
+  if (seqGaps.length) add("info","reviewer","sequence-gap","Folder numbers skip within a box", seqGaps,
+    "A gap can be a folder described elsewhere, one withdrawn, or a typo.");
+  else if (Object.keys(byBox).length) add("pass","reviewer","sequence-gap","Folder numbering runs without gaps");
+
+  if ((m.languages||[]).length > 1)
+    add("info","reviewer","language-run-on",
+      m.languages.length+" languages recorded, which OAC prints with no separator",
+      m.languages.map(l=>({text:l})),
+      "Nothing is wrong in the record; it is worth knowing how it will display.",
+      [C("langmaterial", m.languages.length+" languages; OAC runs them together as “"+m.languages.join(" ")+"”")]);
+
+  const hyg = [], hygA = [];
+  const hygScan = (label, text, anchor) => {
+    if (!text) return;
+    const probs = [];
+    if (/ {2,}/.test(text)) probs.push("double space");
+    if (/[a-z]\(/.test(text)) probs.push("missing space before an opening parenthesis");
+    if (/\s+[,;.]/.test(text)) probs.push("space before punctuation");
+    for (const p of probs){ hyg.push({text:label, where:p}); if (anchor) hygA.push(anchor(p)); }
+  };
+  for (const k in m.notes) m.notes[k].forEach(n=>hygScan(NOTE_LABELS[k]||k, n.plain, p=>C(k,p)));
+  for (const c of m.flat){
+    hygScan(where(c)+" — title", c.titlePlain, p=>A(c.n,"title",p));
+    if (c.rawTitle && c.rawTitle !== c.rawTitle.trim()){
+      hyg.push({text:where(c), where:"leading or trailing space"});
+      hygA.push(A(c.n,"title","leading or trailing space in the title"));
+    }
+    for (const k in c.notes) c.notes[k].forEach(n=>hygScan(where(c)+" — "+(NOTE_LABELS[k]||k), n.plain, p=>A(c.n,k,p)));
+  }
+  if (hyg.length) add("info","author","hygiene","Small transcription and spacing problems",
+    hyg.slice(0,60), hyg.length>60 ? (hyg.length-60)+" further instances not listed." : "", hygA);
+
+  const withUri = m.flat.filter(c=>c.uri).length;
+  if (m.flat.length && withUri === m.flat.length)
+    add("pass","author","staff-links","Every component carries its ArchivesSpace URI");
+  else if (withUri) add("info","author","staff-links", withUri+" of "+m.flat.length+" components carry their ArchivesSpace URI");
+  else if (m.flat.length) add("info","author","staff-links","Components carry no ArchivesSpace URI", [],
+    "Re-export with the option that includes unitid, or reviewers must search by title.");
+
+  return out;
+}
+
+const NOT_CHECKABLE = [
+  "Classifications — collecting area, processing status — don't appear in the EAD export at all.",
+  "Whether a linked Agent or Subject record is itself complete: name forms, sort name, dates of existence, donor contact details.",
+  "The scope note required on locally sourced Subject records, which lives on the subject record rather than the link.",
+  "Whether an authority URI still resolves to the heading it was recorded under.",
+  "Whether a topic accounts for enough of the collection to earn its heading."
+];
+
+/* =====================================================================
+   3. RENDER
+
+   The body carries no annotation. Every note lives in the margin layer,
+   positioned against the element it refers to. That means the copy is
+   clean by construction rather than by stripping things out afterwards.
+   ===================================================================== */
+
+let MODEL = null, ISSUES = [], ANCHORS = new Map(), CENSUS = {suppress:{}, lines:[]}, GLOBAL = [];
+
+const anchorKey = a => a.scope === "collection" ? "c:"+a.field : "n:"+a.n+":"+a.field;
+const domId = key => "f_" + key.replace(/[^A-Za-z0-9]/g,"_");
+
+function indexAnchors(){
+  ANCHORS = new Map();
+  GLOBAL = [];
+  const counts = {};
+  for (const i of ISSUES){
+    if (i.sev === "pass") continue;
+    counts[i.rule] = (counts[i.rule]||0) + i.anchors.filter(a=>a.scope==="component").length;
+  }
+  for (const i of ISSUES){
+    if (i.sev === "pass") continue;
+    /* A rule firing on a large share of components is one observation about
+       the collection, not many findings. */
+    i.collapsed = counts[i.rule] > 12;
+    const targets = i.collapsed ? i.anchors.filter(a=>a.scope!=="component") : i.anchors;
+    if (!targets.length){
+      /* Nothing in the document to point at. Pinning these to the title
+         stacked them at position zero and shoved every real note down the
+         page, so they live outside the positioned layer entirely. */
+      GLOBAL.push({sev:i.sev, audience:i.audience, rule:i.rule, text:i.msg});
+      continue;
+    }
+    for (const a of targets){
+      const k = anchorKey(a);
+      if (!ANCHORS.has(k)) ANCHORS.set(k, []);
+      ANCHORS.get(k).push({sev:i.sev, audience:i.audience, rule:i.rule, text:a.text});
+    }
+  }
+}
+
+/* Blanks are validation information too, so they go to the margin. The body
+   keeps the labelled row so the gap is visible in place; the row is marked
+   and removed on copy. */
+function addGap(key, text){
+  if (!ANCHORS.has(key)) ANCHORS.set(key, []);
+  ANCHORS.get(key).push({sev:"gap", audience:"author", rule:"blank", text});
+}
+
+function gapCensus(m){
+  const noDate = m.flat.filter(c=>!c.dates.length).length;
+  const leaves = m.flat.filter(c=>!c.kids.length);
+  const noContainer = leaves.filter(c=>!c.containers.length).length;
+  const census = {suppress:{}, lines:[]};
+  if (noDate > 12){ census.suppress.dates = true;
+    census.lines.push(noDate+" of "+m.flat.length+" components have no date"); }
+  if (noContainer > 12){ census.suppress.container = true;
+    census.lines.push(noContainer+" of "+leaves.length+" file-level components have no container"); }
+  return census;
+}
+
+function idAttr(key){ return ANCHORS.has(key) ? ' id="'+domId(key)+'"' : ""; }
+/* A component's title always carries its id, whether or not it has a finding
+   of its own: it is the fallback anchor for any field the current view
+   doesn't render, and it can't be fallen back to if it isn't there. */
+const titleIdAttr = n => ' id="'+domId("n:"+n+":title")+'"';
+
+function staffBase(){
+  if (!document.getElementById("uselinks").checked) return "";
+  return (document.getElementById("aspace").value||"").trim().replace(/\/+$/,"") + "/";
+}
+function resourceId(){
+  const mm = /\/repositories\/\d+\/resources\/(\d+)/.exec((MODEL && MODEL.uri)||"");
+  return mm ? mm[1] : "";
+}
+/* Both forms address the same resource page and differ only in the tree
+   anchor; the repository is implied by the staff session, not the path. */
+function staffLink(uri){
+  const base = staffBase();
+  if (!base || !uri) return "";
+  const rid = resourceId();
+  const ao = /\/archival_objects\/(\d+)/.exec(uri);
+  if (ao) return rid ? base+"resources/"+rid+"#tree::archival_object_"+ao[1] : "";
+  const res = /\/resources\/(\d+)/.exec(uri);
+  if (res) return base+"resources/"+res[1]+"#tree::resource_"+res[1];
+  return "";
+}
+
+function row(label, value, key, empty){
+  if (value === null || value === undefined) return "";
+  const cls = empty ? ' class="empty-row"' : "";
+  return "<tr"+cls+idAttr(key||"")+'><td class="lbl">'+esc(label)+'</td><td class="val">'+value+"</td></tr>";
+}
+function band(text){ return '<h3 class="band">'+esc(text)+"</h3>"; }
+
+function noteBlock(kind, opts){
+  const list = MODEL.notes[kind];
+  const key = "c:"+kind;
+  if (!list){
+    if (!EXPECTED_NOTES.has(kind)) return "";
+    addGap(key, NOTE_LABELS[kind]+" is not recorded");
+    return row(NOTE_LABELS[kind], "", key, true);
+  }
+  return row(NOTE_LABELS[kind], list.map(n=>n.html).join(""), key);
+}
+
+const ACCESS_LABELS = {
+  subject:"Subjects", genreform:"Genres and forms", persname:"Names",
+  corpname:"Names", famname:"Names", geogname:"Places",
+  occupation:"Occupations", function:"Functions", title:"Titles"
+};
+const ACCESS_ORDER = ["subject","genreform","occupation","function","geogname","title","persname","corpname","famname"];
+
+function containerLabel(c){
+  if (!c.containers.length) return "";
+  const tops = c.containers.filter(k=>!k.parent);
+  const subs = c.containers.filter(k=>k.parent);
+  const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : "";
+  const bits = [];
+  for (const t of tops){
+    let s = cap(t.type)+" "+t.value;
+    const mine = subs.filter(k=>k.parent===t.id);
+    if (mine.length) s += ", " + mine.map(k=>cap(k.type)+" "+k.value).join(", ");
+    bits.push(s);
+  }
+  for (const s of subs.filter(k=>!tops.some(t=>t.id===k.parent))) bits.push(cap(s.type)+" "+s.value);
+  return bits.join("; ");
+}
+
+/* Blanks have to be registered before the element is written, because the id
+   is only attached when an anchor already exists for it. */
+function preflightGaps(c, opts){
+  if (!(c.title||"").trim()) addGap("n:"+c.n+":title", "component "+c.n+" has no title");
+  /* the OAC view carries a Dates row that shows this on its own; the table
+     view puts dates inside the title, where an absence is invisible */
+  if (opts.mode === "table" && !datesOf(c) && !opts.suppress.dates)
+    addGap("n:"+c.n+":title", "no date recorded");
+}
+
+function componentTitle(c, opts){
+  let t = (c.title||"").trim();
+  const d = datesOf(c);
+  if (d) t += ', <span class="cdate">'+esc(d)+"</span>";
+  const link = staffLink(c.uri);
+  if (link) t = extLink(link, t);
+  if (opts.refs && c.refid) t += ' <span class="refid">'+esc(c.refid)+"</span>";
+  return t;
+}
+
+/* Headings and paragraphs, not wrapper divs — Google Docs keeps the spacing
+   of the former and discards margins on the latter. */
+function renderComponentOAC(c, opts){
+  preflightGaps(c, opts);
+  const tag = c.depth === 0 ? "h3" : (c.kids.length ? "h4" : "p");
+  const cls = c.depth === 0 ? "series" : (c.kids.length ? "subseries" : "file");
+  let h = "<"+tag+' class="'+cls+'"'+titleIdAttr(c.n)+">"+componentTitle(c,opts)+"</"+tag+">";
+  h += '<table class="fields">';
+
+  const cl = containerLabel(c);
+  const ckey = "n:"+c.n+":container";
+  if (cl) h += row("Containers", esc(cl), ckey);
+  else if (!c.kids.length && !opts.suppress.container){
+    addGap(ckey, "no container recorded");
+    h += row("Containers", "", ckey, true);
+  }
+
+  const d = datesOf(c), dkey = "n:"+c.n+":dates";
+  if (d) h += row("Dates", esc(d), dkey);
+  else if (!opts.suppress.dates){
+    addGap(dkey, "no date recorded");
+    h += row("Dates", "", dkey, true);
+  } else if (ANCHORS.has(dkey)) h += row("Dates", "", dkey, true);
+
+  for (const k of NOTE_ORDER){
+    const nkey = "n:"+c.n+":"+k;
+    for (const n of (c.notes[k]||[])) h += row(NOTE_LABELS[k]||k, n.html, nkey);
+    if (!c.notes[k] && ANCHORS.has(nkey)) h += row(NOTE_LABELS[k]||k, "", nkey, true);
+  }
+  if (c.langmaterial) h += row("Language", esc(c.langmaterial));
+  if (c.daos) h += row("Digital object", c.daos+" linked");
+  h += "</table>";
+  for (const k of c.kids) h += renderComponentOAC(k, opts);
+  return h;
+}
+
+function renderComponentTable(nodes, opts){
+  let html = "";
+  for (const s of nodes){
+    preflightGaps(s, opts);
+    const tag = s.depth === 0 ? "h3" : "h4";
+    const cls = s.depth === 0 ? "series" : "subseries";
+    html += "<"+tag+' class="'+cls+'"'+titleIdAttr(s.n)+">"+componentTitle(s,opts)+"</"+tag+">";
+    for (const k of NOTE_ORDER) for (const n of (s.notes[k]||[]))
+      html += "<p"+idAttr("n:"+s.n+":"+k)+'><span class="flabel">'+esc(NOTE_LABELS[k]||k)+":</span> "+
+              n.html.replace(/^<p>|<\/p>$/g,"")+"</p>";
+
+    const leaves = s.kids.filter(k=>!k.kids.length);
+    const branches = s.kids.filter(k=>k.kids.length);
+    if (leaves.length){
+      html += '<table class="clist"><tr><th>Description</th><th class="ctn">Container</th></tr>';
+      for (const f of leaves){
+        preflightGaps(f, opts);
+        /* the title is the thing being described; the labels that follow it
+           are subordinate, not the other way round */
+        let ft = '<span class="ftitle">'+componentTitle(f, opts)+"</span>";
+        for (const k of NOTE_ORDER) for (const n of (f.notes[k]||[]))
+          ft += '<br><span class="flabel">'+esc(NOTE_LABELS[k]||k)+":</span> "+n.html.replace(/<\/?p>/g,"");
+        const cl = containerLabel(f);
+        if (!cl && !opts.suppress.container) addGap("n:"+f.n+":container","no container recorded");
+        html += "<tr"+titleIdAttr(f.n)+"><td>"+ft+'</td><td class="ctn">'+esc(cl)+"</td></tr>";
+      }
+      html += "</table>";
+    }
+    html += renderComponentTable(branches, opts);
+  }
+  return html;
+}
+
+function renderDocument(){
+  const m = MODEL;
+  indexAnchors();
+  CENSUS = gapCensus(m);
+  const opts = {
+    refs: document.getElementById("showref").checked,
+    mode: document.querySelector('input[name=clmode]:checked').value,
+    suppress: CENSUS.suppress
+  };
+  let h = "";
+
+  const rid = resourceId();
+  const resLink = rid ? staffLink(m.uri) : "";
+  let titleText = esc(m.filingTitle || m.title) + (m.dates.length ? ", "+esc(datesOf(m)) : "");
+  if (resLink) titleText = extLink(resLink, titleText);
+
+  h += '<p class="repoline">'+esc(m.repository)+"</p>";
+  h += "<h1"+idAttr("c:__header")+">"+titleText+"</h1>";
+  h += '<p class="permalink"'+idAttr("c:permalink")+">"+
+       (m.publicUrl ? extLink(m.publicUrl, esc(m.publicUrl)) : "")+"</p>";
+
+  h += "<h2>Collection Overview</h2>";
+  h += band("SUMMARY");
+  h += '<table class="fields">';
+  h += row("Title", esc(m.title), "c:title", !m.title);
+  h += row("Identifier", esc(m.unitid), "c:unitid", !m.unitid);
+  h += row("Dates", esc(datesOf(m)), "c:dates", !m.dates.length);
+
+  if (m.origination.length){
+    const byRole = {};
+    for (const o of m.origination) (byRole[(o.label||"creator").toLowerCase()] ||= []).push(o);
+    let first = true;
+    const roleRow = (lab, names) => {
+      const label = lab.charAt(0).toUpperCase()+lab.slice(1)+(names.length>1?"s":"");
+      const v = names.map(o=>{
+        const rel = o.role && RELATORS[o.role.toLowerCase()] ? " ("+RELATORS[o.role.toLowerCase()].toLowerCase()+")" : "";
+        return esc(o.name)+esc(rel);
+      }).join("<br>");
+      const r = row(label, v, first ? "c:origination" : "");
+      first = false;
+      return r;
+    };
+    for (const lab of ["creator","source","subject"]) if (byRole[lab]) h += roleRow(lab, byRole[lab]);
+    for (const lab in byRole) if (!["creator","source","subject"].includes(lab)) h += roleRow(lab, byRole[lab]);
+  } else h += row("Creator", "", "c:origination", true);
+
+  h += row("Abstract", m.abstract, "c:abstract", !m.abstract);
+  h += row("Extent", m.extents.map(e=>esc(e.text)).join(" "), "c:extent", !m.extents.length);
+  h += row("Language", esc(m.langmaterial), "c:langmaterial", !m.langmaterial);
+  h += noteBlock("prefercite", opts);
+  h += "</table>";
+
+  h += band("BACKGROUND");
+  h += '<table class="fields">';
+  for (const k of ["scopecontent","bioghist","acqinfo","custodhist","appraisal","accruals","processinfo","arrangement"])
+    h += noteBlock(k, opts);
+  if (m.physloc) h += row("Physical location", esc(m.physloc));
+  for (const p of m.physdescNotes) h += row("Physical description", esc(p.text));
+  h += noteBlock("phystech", opts);
+  if (m.descrules) h += row("Rules or conventions", esc(m.descrules));
+  h += "</table>";
+
+  const related = ["odd","relatedmaterial","separatedmaterial","altformavail","originalsloc",
+                   "otherfindaid","bibliography","fileplan","note","materialspec"];
+  if (related.some(k=>m.notes[k])){
+    h += band("RELATED RESOURCES") + '<table class="fields">';
+    for (const k of related) if (m.notes[k]) h += noteBlock(k, opts);
+    h += "</table>";
+  }
+
+  h += band("INDEXED TERMS") + '<table class="fields">';
+  if (!m.access.length){
+    addGap("c:access-gap","no access terms recorded");
+    h += row("Access terms", "", "c:access-gap", true);
+  } else {
+    const groups = {};
+    for (const a of m.access) (groups[ACCESS_LABELS[a.kind]||a.kind] ||= []).push(a);
+    const seen = new Set();
+    let subjKey = "c:access-subjects", nameKey = "c:access-names";
+    for (const k of ACCESS_ORDER){
+      const label = ACCESS_LABELS[k];
+      if (!label || seen.has(label) || !groups[label]) continue;
+      seen.add(label);
+      const v = groups[label].map(a=>esc(a.term) +
+        (a.source ? ' <span class="refid">'+esc(a.source)+"</span>" : "")).join("<br>");
+      const isName = label === "Names";
+      const key = isName ? nameKey : subjKey;
+      if (isName) nameKey = ""; else subjKey = "";
+      h += row(label, v, key);
+    }
+    if (ANCHORS.has("c:access-gap")) h += row("Access points", "", "c:access-gap", true);
+  }
+  h += "</table>";
+
+  h += band("ABOUT THIS COLLECTION GUIDE") + '<table class="fields">';
+  h += row("Collection Guide Author", esc(m.author));
+  h += row("Date Encoded", esc(m.creation));
+  h += row("EAD identifier", esc(m.eadid));
+  h += row("Encoding", esc(m.flavour));
+  h += "</table>";
+
+  h += band("ACCESS AND USE") + '<table class="fields">';
+  for (const k of ["accessrestrict","userestrict","prefercite"]) h += noteBlock(k, opts);
+  h += "</table>";
+
+  h += "<h2>Collection Contents</h2>";
+  if (!m.tree.length) h += "<p>No components.</p>";
+  else h += (opts.mode === "table") ? renderComponentTable(m.tree, opts)
+                                    : m.tree.map(c=>renderComponentOAC(c,opts)).join("");
+
+  document.getElementById("doc").innerHTML = h;
+  document.getElementById("stage").hidden = false;
+  document.getElementById("drop").hidden = true;
+  document.getElementById("copy").disabled = false;
+  buildMargin();
+  renderChips();
+}
+
+/* ---------- the margin layer ---------- */
+const NOTE_GAP = 8;
+const MAX_DRIFT = 110;   /* beyond this a note is visibly marked as displaced */
+
+function buildMargin(){
+  const margin = document.getElementById("margin");
+  margin.innerHTML = "";
+
+  /* The two contents views expose different elements — the table view has no
+     row for a component's container or dates — so an anchor may have nothing
+     to point at. Fall back to the component's title, and if even that is
+     absent, move the finding to the collection list. A finding must never
+     disappear because of a display setting. */
+  const resolved = new Map();
+  const orphans = [];
+  for (const [key, flags] of ANCHORS){
+    let id = domId(key);
+    if (!document.getElementById(id)){
+      const mm = /^n:(\d+):/.exec(key);
+      const fallback = mm ? domId("n:"+mm[1]+":title") : null;
+      if (fallback && document.getElementById(fallback)) id = fallback;
+      else { orphans.push(...flags); continue; }
+    }
+    if (!resolved.has(id)) resolved.set(id, []);
+    resolved.get(id).push(...flags);
+  }
+
+  /* Collection-wide findings sit outside the positioned layer, collapsed to
+     one line so they cost almost no vertical space at the top. */
+  const gbox = document.createElement("div");
+  gbox.id = "mglobal";
+  const globals = GLOBAL.concat(orphans);
+  if (globals.length){
+    const head = document.createElement("button");
+    head.id = "mglobal-head";
+    head.setAttribute("aria-expanded","false");
+    head.textContent = globals.length + " about the collection as a whole";
+    const body = document.createElement("div");
+    body.id = "mglobal-body";
+    for (const f of globals){
+      const d = document.createElement("div");
+      d.className = "mnote static " + f.sev;
+      d.dataset.sev = f.sev; d.dataset.aud = f.audience;
+      d.innerHTML = '<div class="txt">'+esc(f.text)+'</div><div class="meta">'+esc(f.rule)+"</div>";
+      body.appendChild(d);
+    }
+    head.onclick = () => {
+      const open = gbox.classList.toggle("open");
+      head.setAttribute("aria-expanded", String(open));
+      schedulePosition();
+    };
+    gbox.appendChild(head); gbox.appendChild(body);
+  }
+  margin.appendChild(gbox);
+
+  /* One note per target. Several findings on the same element used to stack
+     as separate notes and start a cascade; they're lines within one note. */
+  for (const [id, flags] of resolved){
+    const worst = ["error","warn","gap","info"].find(s => flags.some(f=>f.sev===s)) || "info";
+    const d = document.createElement("div");
+    d.className = "mnote " + worst;
+    d.dataset.target = id;
+    d.innerHTML = flags.map(f =>
+      '<div class="finding" data-sev="'+f.sev+'" data-aud="'+f.audience+'">' +
+      '<div class="txt">'+esc(f.text)+"</div>" +
+      '<div class="meta">'+esc(f.rule)+
+      (f.sev==="gap" ? "" : ' · <span class="aud">'+(f.audience==="author"?"mechanical":"judgement")+"</span>") +
+      "</div></div>").join("");
+    d.addEventListener("mouseenter", ()=>{ const t=document.getElementById(d.dataset.target); if (t) t.classList.add("lit"); });
+    d.addEventListener("mouseleave", ()=>{ const t=document.getElementById(d.dataset.target); if (t) t.classList.remove("lit"); });
+    d.addEventListener("click", ()=>{
+      const t=document.getElementById(d.dataset.target);
+      if (t) t.scrollIntoView({block:"center", behavior:"smooth"});
+    });
+    margin.appendChild(d);
+  }
+  schedulePosition();
+}
+
+/* Measure only once the webfont has settled — EB Garamond arrives
+   asynchronously and every height changes when it does. */
+let positionPending = false;
+function schedulePosition(){
+  if (positionPending) return;
+  positionPending = true;
+  requestAnimationFrame(()=>{ positionPending = false; positionMargin(); });
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedulePosition);
+
+/* Each note wants to sit level with the middle of what it refers to. Where
+   several want the same space they form a cluster, and the cluster is placed
+   around the average of its members' wishes — so crowding pushes notes both
+   up and down instead of queueing them all downwards from the first one. */
+function positionMargin(){
+  const stage = document.getElementById("stage");
+  const margin = document.getElementById("margin");
+  if (!margin || stage.classList.contains("narrow")) return;
+
+  const gbox = document.getElementById("mglobal");
+  const floor = (gbox ? gbox.offsetHeight : 0) + 14;
+  const base = margin.getBoundingClientRect().top;
+
+  const items = [];
+  for (const n of margin.children){
+    if (n.id === "mglobal" || n.hidden) continue;
+    const t = document.getElementById(n.dataset.target);
+    if (!t) continue;
+    const r = t.getBoundingClientRect();
+    const h = n.offsetHeight;
+    const ideal = (r.top - base) + (Math.min(r.height, 120) / 2) - h/2;
+    items.push({el:n, h, ideal, want:ideal, top:Math.max(floor, ideal)});
+  }
+  if (!items.length){ margin.style.height = floor+"px"; return; }
+
+  items.sort((a,b)=>a.want-b.want);
+
+  let guard = 0, changed = true;
+  while (changed && guard++ < 60){
+    changed = false;
+    /* A cluster can shift upwards past a note that preceded it, so the order
+       notes want to be in stops matching the order they are in. Re-sort each
+       pass or the overlap scan compares the wrong pairs. */
+    items.sort((a,b)=>a.top-b.top);
+    for (let i=0; i<items.length-1; i++){
+      if (items[i+1].top >= items[i].top + items[i].h + NOTE_GAP) continue;
+      /* grow the cluster over everything that now overlaps */
+      let s = i, e = i+1;
+      while (e+1 < items.length && items[e+1].top < items[e].top + items[e].h + NOTE_GAP) e++;
+      let sum = 0, off = 0;
+      for (let k=s; k<=e; k++){ sum += items[k].want - off; off += items[k].h + NOTE_GAP; }
+      /* no floor clamp here — clamping mid-relaxation makes two clusters
+         pile onto the floor and oscillate. The sweep below handles it. */
+      let start = sum/(e-s+1);
+      off = 0;
+      for (let k=s; k<=e; k++){ items[k].top = start + off; off += items[k].h + NOTE_GAP; }
+      changed = true;
+      i = e;
+    }
+  }
+
+  /* Relaxation gets each cluster centred on where its members want to be but
+     isn't guaranteed to converge. One ordered sweep afterwards guarantees no
+     overlaps, and because the clustering has already done the work, it pushes
+     things only a little rather than cascading from the first note. */
+  items.sort((a,b)=>a.top-b.top);
+  let y = floor;
+  for (const it of items){
+    it.top = Math.max(it.top, y);
+    y = it.top + it.h + NOTE_GAP;
+  }
+
+  let bottom = floor;
+  for (const it of items){
+    it.el.style.top = it.top + "px";
+    /* honesty about displacement beats a note that quietly lies about
+       what it points at */
+    it.el.classList.toggle("drifted", Math.abs(it.top - it.want) > MAX_DRIFT);
+    bottom = Math.max(bottom, it.top + it.h);
+  }
+  margin.style.height = (bottom + 24) + "px";
+}
+
+function checkWidth(){
+  const stage = document.getElementById("stage");
+  const narrow = window.innerWidth < 1180;
+  stage.classList.toggle("narrow", narrow);
+  if (!narrow) schedulePosition(); else {
+    [...document.getElementById("margin").children].forEach(n=>n.style.top="");
+    document.getElementById("margin").style.height="";
+  }
+}
+
+/* ---------- the counts are the filter ---------- */
+const SEV_LABEL = {error:"to correct", warn:"to look at", info:"noted", gap:"blank"};
+let SEV_ON = {error:true, warn:true, info:true, gap:true};
+
+function allFindings(){
+  return [...document.querySelectorAll("#margin .finding, #margin .mnote.static")];
+}
+
+function renderChips(){
+  const counts = {error:0,warn:0,info:0,gap:0};
+  for (const f of allFindings()) counts[f.dataset.sev]++;
+  const box = document.getElementById("chips");
+  box.innerHTML = "";
+  for (const sev of ["error","warn","info","gap"]){
+    const b = document.createElement("button");
+    b.className = "chip "+sev;
+    b.setAttribute("aria-pressed", String(SEV_ON[sev]));
+    b.disabled = !counts[sev];
+    b.innerHTML = '<span class="dot"></span>'+counts[sev]+" "+SEV_LABEL[sev];
+    b.onclick = ()=>{ SEV_ON[sev] = !SEV_ON[sev]; applyFilters(); renderChips(); };
+    box.appendChild(b);
+  }
+  if (CENSUS.lines.length){
+    const s = document.createElement("span");
+    s.style.cssText = "color:var(--chrome-dim);font-size:12px";
+    s.textContent = CENSUS.lines.join(" · ");
+    box.appendChild(s);
+  }
+}
+
+/* Filtering works on findings; a note disappears only when everything
+   inside it has been filtered away. */
+function applyFilters(){
+  const aud = { author: document.getElementById("f-author").checked,
+                reviewer: document.getElementById("f-reviewer").checked };
+  const show = f => SEV_ON[f.dataset.sev] && (f.dataset.sev === "gap" || aud[f.dataset.aud] !== false);
+  for (const f of allFindings()) f.hidden = !show(f);
+  for (const n of document.querySelectorAll("#margin > .mnote")){
+    const kids = [...n.querySelectorAll(".finding")];
+    n.hidden = kids.length ? kids.every(k=>k.hidden) : n.hidden;
+  }
+  const gbox = document.getElementById("mglobal");
+  if (gbox){
+    const statics = [...gbox.querySelectorAll(".mnote.static")];
+    const visible = statics.filter(s=>!s.hidden).length;
+    const head = document.getElementById("mglobal-head");
+    if (head){
+      head.hidden = !visible;
+      head.textContent = visible + " about the collection as a whole";
+    }
+  }
+  schedulePosition();
+}
+
+/* =====================================================================
+   4. WIRING
+   ===================================================================== */
+
+function load(file){
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      MODEL = parseEAD(r.result);
+      ISSUES = validate(MODEL);
+      renderDocument();
+      document.getElementById("fname").innerHTML =
+        "<b>"+esc(file.name)+"</b> · "+MODEL.flat.length+" components";
+      storeSet({lastFile:file.name, lastAt:Date.now()});
+      armCloseWarning();
+    } catch(err){
+      const d = document.getElementById("drop");
+      d.hidden = false;
+      document.getElementById("stage").hidden = true;
+      let h = "<h2>Couldn't read that file</h2><p>"+esc(err.message)+"</p>";
+      if (err.line) h += "<p>Reported at line "+esc(err.line)+", column "+esc(err.column)+".</p>";
+      if (err.advice) h += "<p>"+esc(err.advice)+"</p>";
+      if (err.suspects && err.suspects.length) h += err.suspects.map(s=>"<pre>"+esc(s)+"</pre>").join("");
+      h += '<button onclick="document.getElementById(\'file\').click()">Choose another file</button>';
+      d.innerHTML = h;
+    }
+  };
+  r.readAsText(file, "utf-8");
+}
+
+const fileInput = document.getElementById("file");
+document.getElementById("pick").onclick = () => fileInput.click();
+document.getElementById("pick2").onclick = () => fileInput.click();
+fileInput.onchange = e => { if (e.target.files[0]) load(e.target.files[0]); };
+
+const drop = document.getElementById("drop");
+["dragenter","dragover"].forEach(ev => document.addEventListener(ev, e => {
+  e.preventDefault(); drop.classList.add("over");
+}));
+["dragleave","drop"].forEach(ev => document.addEventListener(ev, e => {
+  e.preventDefault(); if (ev==="drop"||e.target===drop) drop.classList.remove("over");
+}));
+document.addEventListener("drop", e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (f) load(f);
+});
+
+/* only arm once there's work to lose — a warning on every close teaches
+   people to dismiss it */
+let closeArmed = false;
+function armCloseWarning(){
+  if (closeArmed) return;
+  closeArmed = true;
+  window.addEventListener("beforeunload", e => { e.preventDefault(); e.returnValue = ""; });
+}
+
+document.getElementById("gear").onclick = function(){
+  const s = document.getElementById("settings");
+  const open = s.classList.toggle("open");
+  this.setAttribute("aria-expanded", String(open));
+};
+
+for (const id of ["f-author","f-reviewer"])
+  document.getElementById(id).addEventListener("change", ()=>{ applyFilters(); saveSettings(); });
+for (const el of document.querySelectorAll('input[name=clmode], #showref, #uselinks'))
+  el.addEventListener("change", () => { saveSettings(); if (MODEL) renderDocument(); });
+document.getElementById("aspace").addEventListener("input", () => { saveSettings(); if (MODEL) renderDocument(); });
+document.getElementById("reseturl").onclick = () => {
+  document.getElementById("aspace").value = DEFAULT_ASPACE;
+  saveSettings(); if (MODEL) renderDocument();
+};
+document.getElementById("forget").onclick = function(){
+  storeClear();
+  this.textContent = "Settings forgotten";
+  setTimeout(()=>{ this.textContent = "Forget saved settings"; }, 2400);
+};
+
+window.addEventListener("resize", checkWidth);
+/* anything that changes the document's height after placement — a late font,
+   a wrapped line at a new width — invalidates every measurement */
+if (window.ResizeObserver){
+  const ro = new ResizeObserver(()=>schedulePosition());
+  ro.observe(document.getElementById("doc"));
+}
+
+function saveSettings(){
+  storeSet({
+    aspace: document.getElementById("aspace").value,
+    uselinks: document.getElementById("uselinks").checked,
+    showref: document.getElementById("showref").checked,
+    clmode: document.querySelector('input[name=clmode]:checked').value,
+    fauthor: document.getElementById("f-author").checked,
+    freviewer: document.getElementById("f-reviewer").checked
+  });
+}
+function restoreSettings(){
+  const s = storeGet();
+  document.getElementById("aspace").value = s.aspace || DEFAULT_ASPACE;
+  if (s.uselinks === false) document.getElementById("uselinks").checked = false;
+  if (s.showref === true) document.getElementById("showref").checked = true;
+  if (s.clmode){
+    const r = document.querySelector('input[name=clmode][value="'+s.clmode+'"]');
+    if (r) r.checked = true;
+  }
+  if (s.fauthor === false) document.getElementById("f-author").checked = false;
+  if (s.freviewer === false) document.getElementById("f-reviewer").checked = false;
+  if (s.lastFile){
+    const mins = Math.round((Date.now() - (s.lastAt||Date.now()))/60000);
+    const when = mins < 1 ? "just now" : mins < 60 ? mins+" minutes ago"
+      : mins < 1440 ? Math.round(mins/60)+" hours ago" : Math.round(mins/1440)+" days ago";
+    document.getElementById("lastfile").textContent = "Last opened " + s.lastFile + ", " + when + ".";
+  }
+}
+
+document.getElementById("copy").onclick = function(){
+  const doc = document.getElementById("doc");
+  /* clear any hover highlight, or its tint travels into the paste */
+  doc.querySelectorAll(".lit").forEach(el=>el.classList.remove("lit"));
+  doc.classList.add("copying");
+  const sel = window.getSelection(), range = document.createRange();
+  range.selectNodeContents(doc);
+  sel.removeAllRanges(); sel.addRange(range);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch(e){ ok = false; }
+  sel.removeAllRanges();
+  doc.classList.remove("copying");
+  const orig = this.textContent;
+  this.textContent = ok ? "Copied" : "Copy failed";
+  setTimeout(()=>{ this.textContent = orig; }, 2400);
+};
+
+restoreSettings();
+checkWidth();
+</script>
+</body>
+</html>
